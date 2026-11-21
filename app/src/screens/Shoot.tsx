@@ -15,6 +15,7 @@ import { C, F, TIERS } from '../theme';
 
 type Phase =
   | { k: 'aim' }
+  | { k: 'capturing' }
   | { k: 'judging'; uri: string }
   | { k: 'won'; card: Card; setsDone?: { id: string; name: string }[] }
   | { k: 'nope'; uri: string; verdict: string; triesLeft?: number; screen?: boolean }
@@ -68,7 +69,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
       (!squad.room?.bingo && !!squad.room?.players.find((p) => p.id === squad.session?.playerId)?.found) ||
       !!squad.room?.bingoBoard?.marks[squad.session?.playerId ?? '']?.includes(promptId) ||
       !!squad.room?.rounds.some((r) => r.cards.some((c) => c.playerId === squad.session?.playerId && c.promptId === promptId));
-    if (phase.k === 'judging' && !mineIn) return; // the verdict is still on its way
+    if ((phase.k === 'judging' || phase.k === 'capturing') && !mineIn) return; // the photo or its verdict is still on its way
     const t = setTimeout(() => nav.back(), phase.k === 'won' ? 2200 : phase.k === 'aim' ? 0 : 2500);
     return () => clearTimeout(t);
   }, [mode, roomPhase, roomRound, phase.k, nav]);
@@ -95,6 +96,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
     if (!cam.current || !ready || busy.current) return;
     busy.current = true;
     setReady(false);
+    setPhase({ k: 'capturing' });
     tap('medium');
     if (mode === 'squad') squad.send({ t: 'shooting', promptId }); // a slow upload that started before the buzzer still counts
     try {
@@ -125,7 +127,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
   const devTools = __DEV__ && Platform.OS === 'web';
 
   // ---------- result states share the paper background
-  if (phase.k !== 'aim') {
+  if (phase.k !== 'aim' && phase.k !== 'capturing') {
     return (
       <Screen>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>

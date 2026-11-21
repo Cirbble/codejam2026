@@ -924,7 +924,7 @@ function setupBingo(quick = false, n = 2) {
 }
 
 function bingoFind(room: Room, playerId: string, sub: string, promptId: string | undefined, label: string | null, pts = 10) {
-  const pre = room.precheck(playerId, sub, promptId);
+  const pre = room.precheck(playerId, sub, undefined, promptId);
   if (pre.kind !== 'ok') return pre.reply;
   const name = room.players.get(playerId)!.name;
   return room.settle(
@@ -976,7 +976,7 @@ test('bingo: one find per square, tries per square, the square must be on the ca
   advance(COUNTDOWN_MS);
   const [a, b] = room.prompts;
   assert.equal(room.precheck(ps[0].id, 's0').kind, 'error', 'bingo needs a square');
-  assert.equal(room.precheck(ps[0].id, 's1', 'not-on-card').kind, 'error');
+  assert.equal(room.precheck(ps[0].id, 's1', undefined, 'not-on-card').kind, 'error');
   assert.equal((bingoFind(room, ps[0].id, 's2', a.id, 'apple').body as any).accepted, true);
   assert.equal((bingoFind(room, ps[0].id, 's3', a.id, 'brick').body as any).error, 'locked', 'square already marked');
   assert.equal((bingoFind(room, ps[0].id, 's4', b.id, 'bench').body as any).accepted, true, 'another square is open');
@@ -1041,7 +1041,7 @@ test('bingo: a late upload announced before the buzzer counts for the square it 
   assert.equal(room.markShooting(ps[0].id, 'nope'), false);
   advance(1000);
   assert.equal(room.phase, 'reveal');
-  assert.equal(room.precheck(ps[0].id, 'wrong-square', g[5]).kind, 'error', 'only the announced square');
+  assert.equal(room.precheck(ps[0].id, 'wrong-square', undefined, g[5]).kind, 'error', 'only the announced square');
   assert.equal(room.players.get(ps[0].id)!.score, 0, 'two squares, no line yet: nothing scores');
   assert.equal((bingoFind(room, ps[0].id, 'late', g[4], 'lamp', 60).body as any).accepted, true);
   assert.equal(room.players.get(ps[0].id)!.score, 10 + 10 + 60 + BINGO_LINE_BONUS + BINGO_FIRST_BONUS, 'the late card completed the middle row');
@@ -1119,4 +1119,77 @@ test('ghost: a solo room carries the run to race; its own splits record when eac
   const back = Room.restore(JSON.parse(JSON.stringify(room.snapshot())), now);
   assert.deepEqual(back.view().ghost, ghost, 'the ghost survives a restore');
   assert.deepEqual(back.huntStarts, room.huntStarts);
+});
+
+test('shooting: a press followed by a rejected find leaves no hold; early presses earn no grace', () => {
+  const { room, ps, advance, now } = setup(false, 2);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const pid = room.prompt!.id;
+  // press, rejected photo during the hunt, then the host skips: the reveal runs its normal length
+  room.markShooting(ps[0].id, pid);
+  const r = find(room, ps[0].id, 'rej', null);
+  assert.equal((r.body as any).accepted, false);
+  assert.equal(room.shots.has(ps[0].id), false, 'the press is used up by the upload');
+  room.skip(ps[0].id);
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.latePending(), false);
+  const t0 = now();
+  while (room.phase === 'reveal') advance(250);
+  assert.equal(now() - t0, revealMsFor(0), 'normal reveal length');
+  // a press 15 s before the buzzer earns nothing: the late upload is closed, the reveal is not held
+  const p2 = room.prompt!.id;
+  advance(HUNT_MS - 15_000);
+  room.markShooting(ps[1].id, p2);
+  advance(15_000);
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.latePending(), false, 'early press: no hold');
+  advance(1000);
+  assert.equal(room.precheck(ps[1].id, 'late').kind, 'error', 'early press: late upload closed');
+  // AI failure (abort) releases the press too
+  while (room.phase !== 'hunting') advance(250);
+  const p3 = room.prompt!.id;
+  advance(HUNT_MS - 3000);
+  room.markShooting(ps[0].id, p3);
+  advance(3000);
+  const late = room.precheck(ps[0].id, 'one-late');
+  assert.equal(late.kind, 'ok', 'press 3 s before the buzzer: one late upload');
+  room.abort(ps[0].id, 'one-late'); // transient refusal (rate / busy / AI down)
+  assert.equal(room.precheck(ps[0].id, 'second-late').kind, 'error', 'only one late upload per press');
+  assert.equal(room.latePending(), true, 'the admitted upload keeps the reveal open for its retry');
+});
+
+test('a late upload refused for a transient reason can retry with the same submissionId and photo until the grace deadline', () => {
+  const { room, ps, advance } = setup(false, 2);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const pid = room.prompt!.id;
+  advance(HUNT_MS - 3000);
+  room.markShooting(ps[0].id, pid);
+  advance(3000);
+  advance(5000);
+  assert.equal(room.precheck(ps[0].id, 'sub', 'hashA').kind, 'ok');
+  room.abort(ps[0].id, 'sub'); // e.g. 429 busy
+  advance(4000);
+  assert.equal(room.precheck(ps[0].id, 'sub', 'hashB').kind, 'error', 'a different photo is not the same submission');
+  const again = room.precheck(ps[0].id, 'sub', 'hashA');
+  assert.equal(again.kind, 'ok', 'same submission + photo is re-admitted');
+  assert.ok((again as any).receivedAt <= room.huntEndedAt!, 'still counts as received at the press');
+  advance(15_000); // judging finished 27 s after the deadline
+  const r = room.settle(ps[0].id, 'sub', 1, { accepted: true }, () => card('bench', 'P0', 30, 50, ps[0].id));
+  assert.equal((r.body as any).accepted, true);
+  assert.equal(room.lateAdmit.size, 0);
+  // past the grace deadline a retry is closed
+  const { room: r2, ps: q, advance: adv2 } = setup(false, 2);
+  r2.start(q[0].id);
+  adv2(COUNTDOWN_MS);
+  const p2 = r2.prompt!.id;
+  adv2(HUNT_MS - 2000);
+  r2.markShooting(q[0].id, p2);
+  adv2(2000);
+  assert.equal(r2.precheck(q[0].id, 's', 'h').kind, 'ok');
+  r2.abort(q[0].id, 's');
+  adv2(27_000);
+  assert.equal(r2.round, 2, 'grace over: the reveal let go and the next prompt started');
+  assert.equal(r2.lateAdmit.size, 0);
 });

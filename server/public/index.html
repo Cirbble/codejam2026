@@ -12,7 +12,7 @@
 <style>
 /* Field binder: daylight paper, ink structure, cards carry the colour. Hero = a hand of five cards climbing the tiers. */
 :root {
-  --paper: #E9EDE5; --paper-deep: #DDE2D8; --card: #FAFBF7; --ink: #12150F; --ink-soft: #454B41; --faint: #7D8577; --line: #C3C9BC; --blaze: #F2542D;
+  --paper: #E9EDE5; --paper-deep: #DDE2D8; --card: #FAFBF7; --ink: #12150F; --ink-soft: #454B41; --faint: #7D8577; --line: #C3C9BC; --blaze: #D23C15;
   --common: #7F877A; --common-f: #D3D8CD; --uncommon: #23914A; --uncommon-f: #BFE3C8; --rare: #2563EB; --rare-f: #BCD0FA; --epic: #8B35E0; --epic-f: #DCC4F7; --one: #E0457B;
   --holo: linear-gradient(135deg, #FF6FB1, #FFD45C 28%, #5CE6C8 55%, #6E8BFF 80%, #C77DFF);
   --display: 'Bricolage Grotesque', 'Arial Black', system-ui, sans-serif; --body: 'Inter', system-ui, -apple-system, sans-serif; --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
@@ -40,11 +40,11 @@ h1 { font: 800 clamp(48px, 7.2vw, 92px)/0.95 var(--display); letter-spacing: -0.
 h1 em { font-style: normal; filter: saturate(1.15) brightness(0.86); padding: 0 .04em .12em 0; margin-bottom: -.12em; display: inline-block; background: var(--holo); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .lede { font-size: 20px; color: var(--ink-soft); max-width: 30ch; margin: 0 0 30px; }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; }
-@media (max-width: 520px) { .cta { display: grid; grid-template-columns: 1fr 1fr; } .cta .btn { justify-content: center; } .cta .btn.blaze { grid-column: 1 / -1; } }
+@media (max-width: 520px) { .cta { display: grid; grid-template-columns: 1fr; } .cta .btn { justify-content: center; } .cta .btn:not(.blaze) { height: 44px; border: 0; text-decoration: underline; text-underline-offset: 4px; background: none; } }
 
 /* the hand */
-.hand { position: relative; height: 500px; margin-right: -40px; }
-.card { --w: 206px; position: absolute; left: 50%; top: 50%; width: var(--w); aspect-ratio: 5 / 7; border: 2px solid var(--ink); border-radius: 18px; padding: 11px; background: var(--f); box-shadow: 0 6px 0 var(--ink); transform: translate(-50%, -50%) translate(var(--x), var(--y)) rotate(var(--r)); transition: transform .35s cubic-bezier(.2,.8,.2,1); overflow: hidden; }
+.hand { position: relative; height: min(500px, 36vw); margin-right: clamp(-40px, calc(1374px - 100vw), 0px); }
+.card { --w: min(206px, 15vw); position: absolute; left: 50%; top: 50%; width: var(--w); aspect-ratio: 5 / 7; border: 2px solid var(--ink); border-radius: 18px; padding: 11px; background: var(--f); box-shadow: 0 6px 0 var(--ink); transform: translate(-50%, -50%) translate(var(--x), var(--y)) rotate(var(--r)); transition: transform .35s cubic-bezier(.2,.8,.2,1); overflow: hidden; }
 .card:hover { transform: translate(-50%, -50%) translate(var(--x), calc(var(--y) - 26px)) rotate(var(--r)); z-index: 9; }
 .card .in { height: 100%; display: flex; flex-direction: column; background: var(--card); border: 1.5px solid var(--ink); border-radius: 10px; overflow: hidden; }
 .card .top { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px 7px; font: 600 10px/1 var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); }
@@ -58,14 +58,23 @@ h1 em { font-style: normal; filter: saturate(1.15) brightness(0.86); padding: 0 
 .card.foil::after { content: ""; position: absolute; inset: -40% auto -40% -60%; width: 45%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.5), transparent); transform: rotate(18deg); animation: sheen 4.2s ease-in-out infinite; pointer-events: none; }
 .card.holo { background: var(--holo); }
 @keyframes sheen { 0%, 55% { left: -60%; } 85%, 100% { left: 130%; } }
-.c1 { --f: var(--common-f); --c: var(--common); --x: -232px; --y: 46px; --r: -12deg; }
-.c2 { --f: var(--uncommon-f); --c: var(--uncommon); --x: -112px; --y: 10px; --r: -6deg; }
-.c3 { --f: var(--rare-f); --c: var(--rare); --x: 8px; --y: -6px; --r: 0deg; }
-.c4 { --f: var(--epic-f); --c: var(--epic); --x: 128px; --y: 10px; --r: 6deg; }
-.c5 { --c: var(--one); --x: 248px; --y: 46px; --r: 12deg; }
+.c1 { --f: var(--common-f); --c: var(--common); --x: calc(var(--w) * -1.126); --y: 46px; --r: -12deg; }
+.c2 { --f: var(--uncommon-f); --c: var(--uncommon); --x: calc(var(--w) * -0.544); --y: 10px; --r: -6deg; }
+.c3 { --f: var(--rare-f); --c: var(--rare); --x: calc(var(--w) * 0.039); --y: -6px; --r: 0deg; }
+.c4 { --f: var(--epic-f); --c: var(--epic); --x: calc(var(--w) * 0.621); --y: 10px; --r: 6deg; }
+.c5 { --c: var(--one); --x: calc(var(--w) * 1.204); --y: 46px; --r: 12deg; }
 
 /* ladder */
-.ladder { padding-block: 64px 80px; border-top: 2px solid var(--ink); }
+.today { background: var(--ink); color: #fff; }
+.today .wrap { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 28px; align-items: center; padding-block: 30px; }
+.today .lbl { font: 600 13px/1.2 var(--body); letter-spacing: .12em; text-transform: uppercase; color: #A9B1A2; }
+.today .lbl b { display: block; font: 800 34px/1 var(--display); letter-spacing: -.02em; text-transform: none; color: #fff; margin-top: 6px; }
+.prompts { display: flex; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.prompts span { font: 700 clamp(15px, 1.25vw, 19px)/1 var(--display); padding: 13px 18px; border-radius: 999px; border: 2px solid #3A4235; background: #1C2018; white-space: nowrap; }
+.prompts span::first-letter { text-transform: uppercase; }
+.today .btn { justify-content: center; border-color: #fff; color: var(--ink); background: #fff; box-shadow: 0 4px 0 var(--blaze); white-space: nowrap; }
+@media (max-width: 900px) { .today .wrap { grid-template-columns: minmax(0, 1fr); gap: 16px; } .prompts span { white-space: normal; } }
+.ladder { padding-block: 64px 80px; }
 .ladder h2 { font: 800 clamp(32px, 4.4vw, 52px)/1 var(--display); letter-spacing: -.03em; margin: 0 0 34px; max-width: 18ch; text-wrap: balance; }
 .tiers { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .tier { border: 2px solid var(--ink); border-radius: 16px; padding: 16px; background: var(--card); display: grid; gap: 10px; align-content: start; }
@@ -130,6 +139,14 @@ footer.wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-
     </div>
   </section>
 
+  <section class="today" aria-label="Today's prompts">
+    <div class="wrap">
+      <div class="lbl">Today's five<b id="today-date">Daily hunt</b></div>
+      <div class="prompts" id="prompts"></div>
+      <a class="btn" href="/play/">Start hunting</a>
+    </div>
+  </section>
+
   <section class="wrap ladder">
     <h2>Every find lands in a tier.</h2>
     <div class="tiers">
@@ -142,7 +159,7 @@ footer.wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-
     <div class="modes">
       <div class="mode"><strong>Daily</strong><span>Five prompts a day, the same for everyone. One answer each. Hunt whenever you are out.</span></div>
       <div class="mode"><strong>Squad</strong><span>Friends join with a code. Five timed rounds, then every card is revealed, rarest first.</span></div>
-      <div class="mode"><strong>Quick play</strong><span>Three 60-second rounds for one player. Your score goes on the <a href="/board.html" style="color:var(--ink);text-decoration-thickness:2px;text-underline-offset:3px">team board</a>.</span></div>
+      <div class="mode"><strong>Quick play</strong><span>Three 60-second rounds for one player, scored by how unusual each find is. Your score goes on the <a href="/board.html" style="color:var(--ink);text-decoration-thickness:2px;text-underline-offset:3px">team board</a>.</span></div>
     </div>
   </section>
 </main>
@@ -153,6 +170,14 @@ footer.wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-
 </footer>
 
 <script>
+  // today's five prompts, live (read-only: a fixed placeholder device never creates progress)
+  fetch('/api/daily?device=00000000000000000000000000000000').then((r) => (r.ok ? r.json() : null)).then((d) => {
+    if (!d) return;
+    const box = document.getElementById('prompts');
+    d.prompts.forEach((p) => { const el = document.createElement('span'); el.textContent = p.text; box.appendChild(el); });
+    const date = new Date(d.day + 'T12:00:00');
+    document.getElementById('today-date').textContent = date.toLocaleDateString('en-CA', { weekday: 'long', month: 'short', day: 'numeric' });
+  }).catch(() => { document.querySelector('.today').hidden = true; });
   // add store links when they exist
   fetch('/links.json').then(r => r.ok ? r.json() : null).then(l => {
     if (!l) return;

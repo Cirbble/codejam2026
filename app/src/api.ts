@@ -21,6 +21,7 @@ export type Card = {
   playerName?: string;
   playerId?: string;
   sameAs?: string[];
+  solo?: boolean;
   at: number;
 };
 export type Prompt = { id: string; text: string; examples?: string };

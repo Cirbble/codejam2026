@@ -100,11 +100,11 @@ export default function Home() {
             );
           })}
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10, marginTop: 22 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10, marginTop: 22, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 999, borderWidth: 2, borderColor: C.line, backgroundColor: C.card }}>
           <H size={44} style={{ fontVariant: ['tabular-nums'] }}>
             {daily?.score ?? 0}
           </H>
-          <T style={{ fontFamily: F.bodyBold, color: C.inkSoft }}>pts · {found} of {total} today</T>
+          <T style={{ fontFamily: F.bodyBold, color: C.ink }}>pts · Today {found}/{total}</T>
           <Feather name="chevron-right" size={18} color={C.inkSoft} style={{ alignSelf: 'center' }} />
         </View>
       </Pressable>
@@ -126,7 +126,7 @@ export default function Home() {
             style={({ pressed }) => [styles.next, pressed && { transform: [{ translateY: 3 }, { rotate: '-1deg' }] }]}
           >
             <View style={{ flex: 1, gap: 6 }}>
-              <Label style={{ color: '#A9B1A2' }}>Next up</Label>
+              <Label style={{ color: '#A9B1A2' }}>Daily · next up</Label>
               <H size={28} style={{ color: C.paper }}>
                 {cap(next.text)}
               </H>
@@ -138,7 +138,7 @@ export default function Home() {
         ) : !daily ? (
           <View style={styles.next} accessibilityLabel="Loading today's prompts">
             <View style={{ flex: 1, gap: 10 }}>
-              <Label style={{ color: '#A9B1A2' }}>Next up</Label>
+              <Label style={{ color: '#A9B1A2' }}>Daily · next up</Label>
               <View style={{ height: 22, width: '70%', borderRadius: 6, backgroundColor: '#2A3025' }} />
             </View>
             <View style={[styles.shoot, { backgroundColor: '#2A3025', borderColor: '#2A3025' }]} />

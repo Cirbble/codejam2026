@@ -93,7 +93,7 @@ export function GameCard({ card, width, onPress, style, live = true, flat }: { c
                 <Text style={{ fontFamily: F.bodyBold, fontSize: thumb ? 11 : 12 * s + 1, color: C.white, letterSpacing: 0.6 }}>{t.name.toUpperCase()}</Text>
               </View>
               {!thumb && <Text style={{ fontFamily: F.mono, fontSize: 12 * s + 1, color: C.inkSoft }}>
-                {card.sameCount <= 1 ? 'Only find' : ''}
+                {card.solo ? `Rarity ${card.rarity}` : card.sameCount <= 1 ? 'Only find' : `${card.sameCount} of ${card.totalCount} finds`}
               </Text>}
               {thumb && <Text style={{ fontFamily: F.display, fontSize: 16, color: C.ink }}>{card.points}</Text>}
             </View>

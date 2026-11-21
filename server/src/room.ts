@@ -45,6 +45,8 @@ export const ENDED_TTL_MS = 3 * 3600_000;
 export const LATE_GRACE_MS = 20_000;
 /** Shutter pressed before the deadline ('shooting'): the upload may arrive up to this long after it. */
 export const SHOOT_GRACE_MS = 25_000;
+/** Only a press this close to the buzzer earns the upload grace (an early press can't buy extra hunting time). */
+export const SHOOT_WINDOW_MS = 10_000;
 /** A late card that lands during the reveal stays on screen at least this long. */
 export const LATE_SHOW_MS = 4_000;
 /** The host role passes to a connected player after this long away (lobby and ended only). */
@@ -519,16 +521,23 @@ export class Room {
     for (const p of this.pending.values())
       if (p.round === this.round && p.receivedAt <= this.huntEndedAt && since < (p.shot ? SHOOT_GRACE_MS + LATE_GRACE_MS : LATE_GRACE_MS)) return true;
     // shutter pressed before the buzzer, upload not here yet
-    for (const [pid, s] of this.shots) if (s.round === this.round && !this.found.has(this.slot(pid, s.promptId)) &&!this.pending.has(pid) && since < SHOOT_GRACE_MS) return true;
+    for (const [pid, s] of this.shots)
+      if (s.round === this.round && this.shotCounts(s) && !this.found.has(this.slot(pid, s.promptId)) && !this.pending.has(pid) && since < SHOOT_GRACE_MS) return true;
+    // an admitted late upload waiting for its retry
+    for (const [pid, a] of this.lateAdmit) if (a.round === this.round && !this.found.has(this.slot(pid, a.promptId)) && !this.pending.has(pid) && this.now() <= a.until) return true;
     return false;
+  }
+
+  /** A press earns grace only if it came in the last SHOOT_WINDOW_MS before the buzzer. */
+  private shotCounts(s: { at: number }): boolean {
+    return this.huntEndedAt != null && s.at <= this.huntEndedAt && this.huntEndedAt - s.at <= SHOOT_WINDOW_MS;
   }
 
   /** WS 'shooting': the player pressed the shutter for this prompt; counts only before the deadline. */
   markShooting(playerId: string, promptId: string): boolean {
-    if (this.phase !== 'hunting' || !promptId || this.promptFor(promptId, playerId)?.id !== promptId ||!this.players.has(playerId) || this.found.has(this.slot(playerId, promptId))) return false;
-    // bingo: the latest shutter press names the square the upload is for
-    const prev = this.shots.get(playerId);
-    if (!prev || (this.bingo && prev.promptId !== promptId)) this.shots.set(playerId, { round: this.round, at: this.now(), promptId });
+    // promptFor: the round's prompt, the impostor's twin, or (bingo) the named square
+    if (this.phase !== 'hunting' || !promptId || this.promptFor(promptId, playerId)?.id !== promptId || !this.players.has(playerId) || this.found.has(this.slot(playerId, promptId))) return false;
+    this.shots.set(playerId, { round: this.round, at: this.now(), promptId }); // latest press wins (in bingo it also names the square)
     return true;
   }
 
@@ -547,10 +556,13 @@ export class Room {
 
   /** playerId -> shutter press during the current hunt */
   shots = new Map<string, { round: number; at: number; promptId?: string }>();
+  /** playerId -> the late upload a press admitted; survives a transient refusal until the grace deadline */
+  lateAdmit = new Map<string, { submissionId: string; hash?: string; round: number; shotAt: number; until: number; promptId?: string }>();
 
   private toHunting() {
     this.earlyEnd = null;
     this.shots.clear();
+    this.lateAdmit.clear();
     this.phase = 'hunting';
     this.found.clear();
     this.tries.clear();
@@ -632,30 +644,45 @@ export class Room {
 
   // ---------------- finds ----------------
   /** Gate a find before any AI spend. On 'ok' the caller must call settle() or abort(). */
-  /** promptId: required in bingo (the square the photo is for); ignored otherwise. */
-  precheck(playerId: string, submissionId: string, promptId?: string): Precheck {
+  /** imageHash: ties a late retry to the same photo. promptId: required in bingo (the square the photo is for). */
+  precheck(playerId: string, submissionId: string, imageHash?: string, promptId?: string): Precheck {
     const prior = this.replies.get(`${playerId}:${submissionId}`);
     if (prior) return { kind: 'prior', reply: prior };
     if (!this.players.has(playerId)) return { kind: 'error', reply: err(403, 'bad_request', 'Join the squad first.') };
     const shot = this.shots.get(playerId);
+    // bingo: the press must be for the square this upload is for
     const shotGrace =
       this.phase === 'reveal' &&
       shot?.round === this.round &&
       (!this.bingo || shot.promptId === promptId) &&
-      this.huntEndedAt != null &&
-      shot.at <= this.huntEndedAt &&
-      this.now() - this.huntEndedAt <= SHOOT_GRACE_MS;
-    if (this.phase !== 'hunting' && !shotGrace) return { kind: 'error', reply: err(409, 'closed', 'This prompt is closed.') };
+      this.shotCounts(shot) &&
+      this.now() - this.huntEndedAt! <= SHOOT_GRACE_MS;
+    // a press is used up by the next upload: during the hunt (it needs no grace) or as the one late upload it allows
+    if (this.phase === 'hunting' || shotGrace) this.shots.delete(playerId);
+    // a late upload already admitted, then refused for a transient reason (rate, busy, AI down): its retry gets back in
+    const admit = this.lateAdmit.get(playerId);
+    const readmit =
+      !shotGrace &&
+      this.phase === 'reveal' &&
+      admit != null &&
+      admit.round === this.round &&
+      admit.submissionId === submissionId &&
+      (!admit.hash || admit.hash === imageHash) &&
+      (!this.bingo || admit.promptId === promptId) &&
+      this.now() <= admit.until;
+    if (this.phase !== 'hunting' && !shotGrace && !readmit) return { kind: 'error', reply: err(409, 'closed', 'This prompt is closed.') };
+    // the round's prompt, the impostor's twin, or the bingo square
     const prompt = this.promptFor(promptId, playerId);
     if (!prompt) return { kind: 'error', reply: err(409, 'closed', 'That prompt is not on the card.') };
+    if (shotGrace) this.lateAdmit.set(playerId, { submissionId, hash: imageHash, round: this.round, shotAt: shot!.at, until: this.huntEndedAt! + SHOOT_GRACE_MS, promptId: prompt.id });
     const slot = this.slot(playerId, prompt.id);
     const unit = this.bingo ? 'square' : 'round';
     if (this.found.has(slot)) return { kind: 'error', reply: err(409, 'locked', `You already locked a find this ${unit}.`) };
     if ((this.tries.get(slot) ?? 0) >= MAX_TRIES) return { kind: 'error', reply: err(409, 'locked', `No tries left this ${unit}.`) };
     if (this.pending.has(playerId)) return { kind: 'error', reply: { status: 429, body: { error: 'rate', message: 'One photo at a time.', retryAfterMs: 2000 } } };
     // a late upload announced before the buzzer counts as received at the shutter press
-    const receivedAt = shotGrace ? shot!.at : this.now();
-    this.pending.set(playerId, { submissionId, round: this.round, receivedAt, shot: shotGrace, promptId: prompt.id });
+    const receivedAt = shotGrace ? shot!.at : readmit ? admit!.shotAt : this.now();
+    this.pending.set(playerId, { submissionId, round: this.round, receivedAt, shot: shotGrace || readmit, promptId: prompt.id });
     return { kind: 'ok', round: this.round, prompt, receivedAt };
   }
 
@@ -734,6 +761,7 @@ export class Room {
 
   /** AI unavailable: no try used, nothing stored. */
   abort(playerId: string, submissionId: string) {
+    this.shots.delete(playerId);
     if (this.pending.get(playerId)?.submissionId === submissionId) this.pending.delete(playerId);
   }
 
@@ -754,7 +782,10 @@ export class Room {
     };
     if (!p) return err(403, 'bad_request', 'You left the squad.');
     const sameRound = this.round === round && (this.phase === 'hunting' || this.phase === 'reveal');
-    if (pend?.shot) this.shots.delete(playerId); // the announced upload has landed
+    if (pend?.shot) {
+      this.shots.delete(playerId); // the announced upload has landed
+      if (this.lateAdmit.get(playerId)?.submissionId === submissionId) this.lateAdmit.delete(playerId);
+    }
     const grace = pend?.shot ? SHOOT_GRACE_MS + LATE_GRACE_MS : LATE_GRACE_MS;
     const inTime = this.phase === 'hunting' || (pend != null && this.huntEndedAt != null && pend.receivedAt <= this.huntEndedAt && this.now() - this.huntEndedAt < grace);
     if (!sameRound || !inTime) return save(err(409, 'closed', 'Time ran out on that prompt.'));
