@@ -24,6 +24,8 @@ export const ENDED_TTL_MS = 3 * 3600_000;
 export const LATE_GRACE_MS = 20_000;
 /** Shutter pressed before the deadline ('shooting'): the upload may arrive up to this long after it. */
 export const SHOOT_GRACE_MS = 25_000;
+/** Only a press this close to the buzzer earns the upload grace (an early press can't buy extra hunting time). */
+export const SHOOT_WINDOW_MS = 10_000;
 /** A late card that lands during the reveal stays on screen at least this long. */
 export const LATE_SHOW_MS = 4_000;
 /** The host role passes to a connected player after this long away (lobby and ended only). */
@@ -269,14 +271,20 @@ export class Room {
     for (const p of this.pending.values())
       if (p.round === this.round && p.receivedAt <= this.huntEndedAt && since < (p.shot ? SHOOT_GRACE_MS + LATE_GRACE_MS : LATE_GRACE_MS)) return true;
     // shutter pressed before the buzzer, upload not here yet
-    for (const [pid, s] of this.shots) if (s.round === this.round && !this.found.has(pid) && !this.pending.has(pid) && since < SHOOT_GRACE_MS) return true;
+    for (const [pid, s] of this.shots)
+      if (s.round === this.round && this.shotCounts(s) && !this.found.has(pid) && !this.pending.has(pid) && since < SHOOT_GRACE_MS) return true;
     return false;
+  }
+
+  /** A press earns grace only if it came in the last SHOOT_WINDOW_MS before the buzzer. */
+  private shotCounts(s: { at: number }): boolean {
+    return this.huntEndedAt != null && s.at <= this.huntEndedAt && this.huntEndedAt - s.at <= SHOOT_WINDOW_MS;
   }
 
   /** WS 'shooting': the player pressed the shutter for this prompt; counts only before the deadline. */
   markShooting(playerId: string, promptId: string): boolean {
     if (this.phase !== 'hunting' || this.prompt?.id !== promptId || !this.players.has(playerId) || this.found.has(playerId)) return false;
-    if (!this.shots.has(playerId)) this.shots.set(playerId, { round: this.round, at: this.now() });
+    this.shots.set(playerId, { round: this.round, at: this.now() }); // latest press wins
     return true;
   }
 
@@ -355,8 +363,9 @@ export class Room {
     if (prior) return { kind: 'prior', reply: prior };
     if (!this.players.has(playerId)) return { kind: 'error', reply: err(403, 'bad_request', 'Join the squad first.') };
     const shot = this.shots.get(playerId);
-    const shotGrace =
-      this.phase === 'reveal' && shot?.round === this.round && this.huntEndedAt != null && shot.at <= this.huntEndedAt && this.now() - this.huntEndedAt <= SHOOT_GRACE_MS;
+    const shotGrace = this.phase === 'reveal' && shot?.round === this.round && this.shotCounts(shot) && this.now() - this.huntEndedAt! <= SHOOT_GRACE_MS;
+    // a press is used up by the next upload: during the hunt (it needs no grace) or as the one late upload it allows
+    if (this.phase === 'hunting' || shotGrace) this.shots.delete(playerId);
     if (this.phase !== 'hunting' && !shotGrace) return { kind: 'error', reply: err(409, 'closed', 'This prompt is closed.') };
     if (this.found.has(playerId)) return { kind: 'error', reply: err(409, 'locked', 'You already locked a find this round.') };
     if ((this.tries.get(playerId) ?? 0) >= MAX_TRIES) return { kind: 'error', reply: err(409, 'locked', 'No tries left this round.') };
@@ -421,6 +430,7 @@ export class Room {
 
   /** AI unavailable: no try used, nothing stored. */
   abort(playerId: string, submissionId: string) {
+    this.shots.delete(playerId);
     if (this.pending.get(playerId)?.submissionId === submissionId) this.pending.delete(playerId);
   }
 

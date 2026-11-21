@@ -407,7 +407,7 @@ async function squadFind(b: any, device: string, submissionId: string, ip: strin
     reply = room.settle(player.id, submissionId, pre.round, outcomeOf(r.j), () => {
       const dev = player.device || device;
       // solo runs count crowd stats per (device, team): one phone passed between tables still counts each team
-      made = mintCard(pre.prompt, r.j, jpeg, dev, { mode: 'squad', playerName: player.name, playerId: player.id }, room.solo && room.team ? `${dev}|team:${teamKey(room.team)}` : dev, test, room.solo);
+      made = mintCard(pre.prompt, r.j, jpeg, dev, { mode: 'squad', playerName: player.name, playerId: player.id, ...(room.solo ? { solo: true } : {}) }, room.solo && room.team ? `${dev}|team:${teamKey(room.team)}` : dev, test, room.solo);
       // journal it in the same atomic commit: a crash before the room snapshot is reconciled on startup
       markPendingSquad(made.card.id, { code: room.code, playerId: player.id, submissionId, round: pre.round });
       try {

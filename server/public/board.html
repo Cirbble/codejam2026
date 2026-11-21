@@ -88,14 +88,15 @@ async function load() {
     page = page % pages;
     const shown = teams.slice(page * max, page * max + max);
     const offset = page * max;
-    const just = data.lastRun && Date.now() - data.lastRun.at < 90_000 ? data.lastRun : null;
+    const now = data.now || data.updatedAt || Date.now();
+    const just = data.lastRun && now - data.lastRun.at < 90_000 ? data.lastRun : null;
     document.getElementById('just').innerHTML = just ? `<b>${esc(just.team)}</b> just scored <b>${just.score}</b>` : '';
     document.getElementById('count').textContent = teams.length ? `${teams.length} ${teams.length === 1 ? 'team' : 'teams'} played` : '';
     document.getElementById('board').innerHTML = shown.length
       ? shown.map((t, i) => `<li class="${offset + i < 3 ? 'top' : ''}">
           <span class="rank">${offset + i + 1}</span>
           <span class="thumb" style="${t.bestCard ? `background-image:url('${esc(t.bestCard.photo)}')` : ''}"></span>
-          <span class="team"><strong>${esc(t.team)}</strong><span>${t.plays} ${t.plays === 1 ? 'run' : 'runs'}${t.bestCard ? ' · best find: ' + esc(t.bestCard.title) : ''}</span></span>
+          <span class="team"><strong>${esc(t.team)}</strong><span>${t.plays} ${t.plays === 1 ? 'run' : 'runs'}${t.bestCard ? ' · ' + esc(t.bestCard.title) : ''}</span></span>
           <span class="score">${t.best}</span>
         </li>`).join('')
       : `<li class="empty" style="border:0;background:none"><strong>No teams yet</strong><span>Open Quick play and go first.</span></li>`;

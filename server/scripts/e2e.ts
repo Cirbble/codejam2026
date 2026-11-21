@@ -238,7 +238,7 @@ b.ws.close();
   check(s.room.endsAt - s.room.now > 50_000 && s.room.endsAt - s.room.now <= 60_000, 'solo rounds are 60 s');
   sendWs(s, { t: 'shooting', promptId: s.room.prompt.id });
   const sf = await squadFind(s, hydrant);
-  check(sf.json?.accepted === true, `solo find accepted: ${sf.json?.card?.label} ${sf.json?.card?.points} pts`);
+  check(sf.json?.accepted === true && sf.json.card.solo === true, `solo find accepted: ${sf.json?.card?.label} ${sf.json?.card?.points} pts (solo card)`);
   check(await waitFor(s, (r) => r.phase === 'reveal', 3000) && s.room.revealMs === 4000, 'solo: early end, 4 s reveal');
   check(await waitFor(s, (r) => r.phase === 'hunting' && r.round === 2, 6000), 'solo round 2 after the 4 s reveal');
   const seen = new Set([s.room.prompt.id, 'i-red']);
@@ -252,6 +252,7 @@ b.ws.close();
   check(await waitFor(s, (r) => r.phase === 'ended'), 'solo run ended after 3 rounds');
   const pts = sf.json?.card?.points;
   const bd = await api('/api/board');
+  check(Math.abs((bd.json?.now ?? 0) - Date.now()) < 60_000, 'board carries the server clock');
   check(bd.json && 'lastRun' in bd.json, `board has lastRun (${JSON.stringify(bd.json?.lastRun)})`);
   const row = bd.json?.teams?.find((t: any) => t.team === s.room.team);
   if (PROD) {

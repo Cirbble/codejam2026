@@ -735,3 +735,41 @@ test('upload grace: a shutter press before the buzzer lets the upload land up to
   while (room.phase === 'reveal' && now() - t0 < 60_000) advance(250);
   assert.ok(now() - t0 >= 25_000 && now() - t0 < 27_000, `held ${now() - t0} ms`);
 });
+
+test('shooting: a press followed by a rejected find leaves no hold; early presses earn no grace', () => {
+  const { room, ps, advance, now } = setup(false, 2);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const pid = room.prompt!.id;
+  // press, rejected photo during the hunt, then the host skips: the reveal runs its normal length
+  room.markShooting(ps[0].id, pid);
+  const r = find(room, ps[0].id, 'rej', null);
+  assert.equal((r.body as any).accepted, false);
+  assert.equal(room.shots.has(ps[0].id), false, 'the press is used up by the upload');
+  room.skip(ps[0].id);
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.latePending(), false);
+  const t0 = now();
+  while (room.phase === 'reveal') advance(250);
+  assert.equal(now() - t0, revealMsFor(0), 'normal reveal length');
+  // a press 15 s before the buzzer earns nothing: the late upload is closed, the reveal is not held
+  const p2 = room.prompt!.id;
+  advance(HUNT_MS - 15_000);
+  room.markShooting(ps[1].id, p2);
+  advance(15_000);
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.latePending(), false, 'early press: no hold');
+  advance(1000);
+  assert.equal(room.precheck(ps[1].id, 'late').kind, 'error', 'early press: late upload closed');
+  // AI failure (abort) releases the press too
+  while (room.phase !== 'hunting') advance(250);
+  const p3 = room.prompt!.id;
+  advance(HUNT_MS - 3000);
+  room.markShooting(ps[0].id, p3);
+  advance(3000);
+  const late = room.precheck(ps[0].id, 'one-late');
+  assert.equal(late.kind, 'ok', 'press 3 s before the buzzer: one late upload');
+  room.abort(ps[0].id, 'one-late');
+  assert.equal(room.precheck(ps[0].id, 'second-late').kind, 'error', 'only one late upload per press');
+  assert.equal(room.latePending(), false);
+});

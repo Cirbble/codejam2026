@@ -12,9 +12,12 @@ export type Run = { runId: string; team: string; playerName: string; score: numb
 export type RunResult = { rank: number | null; best: number | null; counted: boolean; runsLeft: number };
 type StoredRun = Omit<Run, 'device'> & { dev?: string; counted?: boolean };
 /** plays: every run; countedBy: counted runs per device hash (first COUNTED_RUNS per device); best is the best counted run. */
-type TeamRow = { team: string; best: number; plays: number; countedBy?: Dict<number>; bestCardId: string | null; at: number };
+/** hasBest false: only reserved (no finished counted run yet), not shown on the board. */
+type TeamRow = { team: string; best: number; plays: number; countedBy?: Dict<number>; bestCardId: string | null; at: number; hasBest?: boolean };
+/** A counted attempt reserved when a solo run starts, so abandoning a bad start doesn't give the slot back. */
+type OpenRun = { key: string; dev: string; counted: boolean; runsLeft: number; at: number };
 type RunMemo = { counted: boolean; runsLeft: number };
-type BoardDoc = { teams: Dict<TeamRow>; runs: StoredRun[]; runIds: Dict<RunMemo | 1>; hidden: Dict<1>; updatedAt: number };
+type BoardDoc = { teams: Dict<TeamRow>; runs: StoredRun[]; runIds: Dict<RunMemo | 1>; hidden: Dict<1>; open: Dict<OpenRun>; updatedAt: number };
 
 export const BOARD_TOP = 50;
 /**
@@ -41,7 +44,7 @@ export function displayTeam(name: unknown): string {
     .trim();
 }
 
-const emptyDoc = (now = 0): BoardDoc => ({ teams: dict(), runs: [], runIds: dict(), hidden: dict(), updatedAt: now });
+const emptyDoc = (now = 0): BoardDoc => ({ teams: dict(), runs: [], runIds: dict(), hidden: dict(), open: dict(), updatedAt: now });
 
 function load(): BoardDoc {
   try {
@@ -51,7 +54,7 @@ function load(): BoardDoc {
       const runIds = toDict<RunMemo | 1>(raw.runIds);
       for (const r of runs) if (r.runId && !runIds[r.runId]) runIds[r.runId] = 1;
       const teams = toDict<TeamRow>(raw.teams, (t) => ({ ...t, countedBy: toDict<number>(t?.countedBy) }));
-      return { teams, runs, runIds, hidden: toDict<1>(raw.hidden), updatedAt: Number(raw.updatedAt) || 0 };
+      return { teams, runs, runIds, hidden: toDict<1>(raw.hidden), open: toDict<OpenRun>(raw.open), updatedAt: Number(raw.updatedAt) || 0 };
     }
   } catch (e) {
     console.warn('[board] unreadable, starting empty:', (e as Error).message);
@@ -63,7 +66,7 @@ let doc = load();
 /** Visible teams, sorted: best desc, then the earlier best run. Hidden and test teams are left out. */
 function sorted(): [string, TeamRow][] {
   return Object.entries(doc.teams)
-    .filter(([k, r]) => !doc.hidden[k] && !isTestTeam(r.team))
+    .filter(([k, r]) => !doc.hidden[k] && !isTestTeam(r.team) && r.hasBest !== false)
     .sort((a, b) => b[1].best - a[1].best || a[1].at - b[1].at);
 }
 
@@ -71,6 +74,38 @@ function sorted(): [string, TeamRow][] {
  * Record a finished solo run, idempotently by runId. The board is written to disk before this returns;
  * a write failure rolls the in-memory change back and throws, so the caller can retry later.
  */
+function save() {
+  writeAtomic(FILE, JSON.stringify(doc));
+}
+
+/**
+ * A solo run is starting: take this phone's counted slot for the team now, durably. Idempotent by runId.
+ * Throws on a write failure (nothing changes), so the run is not started.
+ */
+export function reserveRun(runId: string, team: string, device: string | undefined, at = Date.now()): RunMemo {
+  const prior = doc.open[runId];
+  if (prior) return { counted: prior.counted, runsLeft: prior.runsLeft };
+  const key = teamKey(team);
+  const prevRow = doc.teams[key] ? { ...doc.teams[key], countedBy: toDict<number>(doc.teams[key].countedBy) } : null;
+  const dev = devHash(device);
+  const row = (doc.teams[key] ??= { team: displayTeam(team), best: 0, plays: 0, countedBy: dict(), bestCardId: null, at, hasBest: false });
+  const by = (row.countedBy ??= dict());
+  const used = by[dev] ?? 0;
+  const counted = used < COUNTED_RUNS;
+  if (counted) by[dev] = used + 1;
+  const memo = { counted, runsLeft: Math.max(0, COUNTED_RUNS - (by[dev] ?? 0)) };
+  doc.open[runId] = { key, dev, ...memo, at };
+  try {
+    save();
+  } catch (e) {
+    if (prevRow) doc.teams[key] = prevRow;
+    else delete doc.teams[key];
+    delete doc.open[runId];
+    throw e;
+  }
+  return memo;
+}
+
 export function recordRun(run: Run): RunResult {
   const key = teamKey(run.team);
   const seen = doc.runIds[run.runId];
@@ -81,23 +116,29 @@ export function recordRun(run: Run): RunResult {
   }
   const prevRow = doc.teams[key] ? { ...doc.teams[key], countedBy: toDict<number>(doc.teams[key].countedBy) } : null;
   const prevUpdated = doc.updatedAt;
-  const dev = devHash(run.device);
-  const isNew = !doc.teams[key];
-  const row = (doc.teams[key] ??= { team: displayTeam(run.team), best: 0, plays: 0, countedBy: dict(), bestCardId: run.bestCardId, at: run.at });
+  const open = doc.open[run.runId];
+  const dev = open?.dev ?? devHash(run.device);
+  const row = (doc.teams[key] ??= { team: displayTeam(run.team), best: 0, plays: 0, countedBy: dict(), bestCardId: run.bestCardId, at: run.at, hasBest: false });
   const by = (row.countedBy ??= dict());
   row.plays++;
-  const used = by[dev] ?? 0;
-  const counted = used < COUNTED_RUNS;
+  let counted: boolean;
+  if (open) counted = open.counted; // the slot was taken when the run started
+  else {
+    const used = by[dev] ?? 0;
+    counted = used < COUNTED_RUNS;
+    if (counted) by[dev] = used + 1;
+  }
   if (counted) {
-    by[dev] = used + 1;
-    // strictly higher only: a tie keeps the earlier run
-    if (isNew || run.score > row.best) {
+    // strictly higher only: a tie keeps the earlier run (the team's first finished counted run always sets it)
+    if (row.hasBest === false || run.score > row.best) {
       row.best = run.score;
       row.bestCardId = run.bestCardId;
       row.at = run.at;
+      row.hasBest = true;
     }
   }
-  const memo: RunMemo = { counted, runsLeft: Math.max(0, COUNTED_RUNS - (by[dev] ?? 0)) };
+  const memo: RunMemo = { counted, runsLeft: open ? open.runsLeft : Math.max(0, COUNTED_RUNS - (by[dev] ?? 0)) };
+  if (open) delete doc.open[run.runId];
   const { device: _omit, ...rest } = run;
   doc.runs.push({ ...rest, team: row.team, dev, counted });
   doc.runIds[run.runId] = memo;
@@ -111,6 +152,7 @@ export function recordRun(run: Run): RunResult {
     doc.runs.pop();
     doc.runs.unshift(...trimmed);
     delete doc.runIds[run.runId];
+    if (open) doc.open[run.runId] = open;
     doc.updatedAt = prevUpdated;
     throw e;
   }
@@ -145,6 +187,7 @@ export function boardView(): {
   teams: { team: string; best: number; plays: number; bestCard: Card | null; at: number }[];
   lastRun: { team: string; score: number; at: number } | null;
   updatedAt: number;
+  now: number;
 } {
   return {
     teams: sorted()
@@ -152,6 +195,7 @@ export function boardView(): {
       .map(([, r]) => ({ team: r.team, best: r.best, plays: r.plays, bestCard: (r.bestCardId && cards.data[r.bestCardId]) || null, at: r.at })),
     lastRun: lastVisibleRun(),
     updatedAt: doc.updatedAt,
+    now: Date.now(), // server clock, so the projector doesn't trust the laptop's
   };
 }
 

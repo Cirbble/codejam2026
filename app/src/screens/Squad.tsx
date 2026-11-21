@@ -226,14 +226,14 @@ function Hunt({ room }: { room: RoomView }) {
       <View style={styles.track}>
         <View style={{ width: `${Math.max(0, Math.min(1, left / span)) * 100}%`, height: '100%', backgroundColor: urgent ? C.blaze : C.ink, borderRadius: 999 }} />
       </View>
-      <View style={{ flex: 1, justifyContent: 'center' }}>
+      <View style={{ flex: 1, justifyContent: 'flex-start', paddingTop: 26 }}>
         <View style={styles.promptCard}>
           <Sparkle size={34} />
           <H size={44} style={{ color: C.paper }}>
             {cap(room.prompt?.text)}
           </H>
         </View>
-        {!room.solo && (
+        {!room.solo && room.players.length > 1 && (
           <T style={{ fontFamily: F.bodyBold, textAlign: 'center', marginTop: 22 }}>
             {room.players.filter((p) => p.found).length} of {room.players.length} found
           </T>

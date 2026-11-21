@@ -66,6 +66,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastMsg = useRef(0);
+  const lastOp = useRef<{ key: string; op: string; at: number } | null>(null);
   const openedAt = useRef(0);
 
 
@@ -96,6 +97,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
       if (m.t === 'welcome') {
         const s = { code: m.code, playerId: m.playerId, secret: m.secret };
         pending.current = null;
+        lastOp.current = null;
         if (ackTimer.current) clearTimeout(ackTimer.current);
         sessionRef.current = s;
         setSession(s);
@@ -197,7 +199,10 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
       setRoom(null);
       if (!first.solo) initNotifications().catch(() => {}); // squads only, and only when one starts
       setPendingSolo(!!first.solo);
-      pending.current = { ...first, device: await getDevice(), op: Date.now().toString(36) + Math.random().toString(36).slice(2) }; // op makes a retried create/join idempotent
+      const opKey = JSON.stringify([first.t, first.code ?? '', first.team ?? '', first.solo ?? false]);
+      if (!lastOp.current || lastOp.current.key !== opKey || Date.now() - lastOp.current.at > 9 * 60_000)
+        lastOp.current = { key: opKey, op: Date.now().toString(36) + Math.random().toString(36).slice(2), at: Date.now() };
+      pending.current = { ...first, device: await getDevice(), op: lastOp.current.op }; // the same op for a retry, so a lost welcome comes back instead of a duplicate
       want.current = true;
       open();
       if (ackTimer.current) clearTimeout(ackTimer.current);

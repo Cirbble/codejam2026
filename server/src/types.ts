@@ -19,6 +19,8 @@ export type Card = {
   day?: string;
   playerName?: string;
   at: number;
+  /** Found in a solo run: scored from aiRarity alone, so crowd stats like "Only find" don't apply. */
+  solo?: boolean;
   /** Squad cards: the finder's player id in that room. */
   playerId?: string;
   /** Squad reveal/rounds only: names of other squad members who found the same label that round. */

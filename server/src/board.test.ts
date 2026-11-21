@@ -129,3 +129,9 @@ test('lastRun features the most recent visible run', () => {
   board.hideTeam('India Team');
   assert.deepEqual(board.boardView().lastRun, { team: 'Hotel', score: 60, at: 1 }, 'hidden teams skipped');
 });
+
+test('board view carries the server clock', () => {
+  const t = Date.now();
+  const v = board.boardView();
+  assert.ok(v.now >= t && v.now <= Date.now());
+});
