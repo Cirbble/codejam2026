@@ -1,0 +1,85 @@
+{
+  "expo": {
+    "name": "Rarefind",
+    "slug": "rarefind",
+    "owner": "benjamingurevitch",
+    "scheme": "rarefind",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#E9EDE5",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.benjamingurevitch.rarefind",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSCameraUsageDescription": "Rarefind uses the camera so you can photograph your finds.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.benjamingurevitch.rarefind",
+      "adaptiveIcon": {
+        "backgroundColor": "#12150F",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
+      "permissions": [
+        "CAMERA",
+        "VIBRATE",
+        "android.permission.CAMERA"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "name": "Rarefind",
+      "backgroundColor": "#E9EDE5",
+      "themeColor": "#E9EDE5"
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "backgroundColor": "#E9EDE5"
+        }
+      ],
+      "expo-status-bar",
+      "expo-image",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Rarefind uses the camera so you can photograph your finds.",
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-updates",
+      [
+        "expo-notifications",
+        {
+          "color": "#F2542D"
+        }
+      ]
+    ],
+    "extra": {
+      "serverUrl": "https://rarefind-production.up.railway.app",
+      "eas": {
+        "projectId": "4bd6022c-36d4-4c8e-83e5-c2dbb815baa2"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "experiments": {
+      "baseUrl": "/play"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/4bd6022c-36d4-4c8e-83e5-c2dbb815baa2"
+    }
+  }
+}

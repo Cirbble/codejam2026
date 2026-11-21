@@ -1,0 +1,12 @@
+node_modules/
+data/
+data-*/
+dist/
+.env
+.env.*
+.secrets/
+*.tmp
+
+# the web build keeps its bundled assets under assets/node_modules
+!server/public/play/assets/node_modules/
+council/*.err

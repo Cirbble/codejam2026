@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rarefind</title>
+<meta name="description" content="A photo game played outside. The fewer people who found the same thing, the rarer your card.">
+<link rel="icon" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+/* Field binder: daylight paper, ink structure, cards carry the colour. Hero = a hand of five cards climbing the tiers. */
+:root {
+  --paper: #E9EDE5; --paper-deep: #DDE2D8; --card: #FAFBF7; --ink: #12150F; --ink-soft: #454B41; --faint: #7D8577; --line: #C3C9BC; --blaze: #F2542D;
+  --common: #7F877A; --common-f: #D3D8CD; --uncommon: #23914A; --uncommon-f: #BFE3C8; --rare: #2563EB; --rare-f: #BCD0FA; --epic: #8B35E0; --epic-f: #DCC4F7; --one: #E0457B;
+  --holo: linear-gradient(135deg, #FF6FB1, #FFD45C 28%, #5CE6C8 55%, #6E8BFF 80%, #C77DFF);
+  --display: 'Bricolage Grotesque', 'Arial Black', system-ui, sans-serif; --body: 'Inter', system-ui, -apple-system, sans-serif; --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { overflow-x: hidden; background: var(--paper); color: var(--ink); font: 400 17px/1.55 var(--body); -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left)); padding-right: max(20px, env(safe-area-inset-right)); }
+header.wrap { display: flex; align-items: center; justify-content: space-between; padding-block: 18px 6px; }
+.mark { display: inline-flex; align-items: flex-end; font: 800 30px/1 var(--display); letter-spacing: -1.2px; color: var(--ink); text-decoration: none; }
+.mark i { width: 9px; height: 9px; border-radius: 50%; background: var(--holo); margin: 0 0 5px 3px; }
+.btn { display: inline-flex; align-items: center; gap: 10px; height: 56px; padding: 0 24px; border-radius: 16px; border: 2px solid var(--ink); font: 600 17px/1 var(--body); color: var(--ink); text-decoration: none; background: transparent; transition: transform .12s ease, box-shadow .12s ease; }
+.btn svg { width: 20px; height: 20px; }
+.btn.ink { background: var(--ink); color: #fff; box-shadow: 0 4px 0 #5B6355; }
+.btn.blaze { background: var(--blaze); color: #fff; box-shadow: 0 4px 0 var(--ink); }
+.btn:hover { transform: translateY(-2px); }
+.btn.ink:hover { box-shadow: 0 6px 0 #5B6355; } .btn.blaze:hover { box-shadow: 0 6px 0 var(--ink); }
+.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+.btn:focus-visible, a:focus-visible { outline: 3px solid var(--rare); outline-offset: 3px; }
+.btn.small { height: 44px; padding: 0 18px; font-size: 15px; border-radius: 13px; }
+
+.hero { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr); gap: 40px; align-items: center; padding-block: 36px 72px; }
+h1 { font: 800 clamp(48px, 7.2vw, 92px)/0.95 var(--display); letter-spacing: -0.035em; margin: 0 0 22px; text-wrap: balance; }
+h1 em { font-style: normal; padding: 0 .04em .12em 0; margin-bottom: -.12em; display: inline-block; background: var(--holo); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lede { font-size: 20px; color: var(--ink-soft); max-width: 30ch; margin: 0 0 30px; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+
+/* the hand */
+.hand { position: relative; height: 500px; margin-right: -40px; }
+.card { --w: 206px; position: absolute; left: 50%; top: 50%; width: var(--w); aspect-ratio: 5 / 7; border: 2px solid var(--ink); border-radius: 18px; padding: 11px; background: var(--f); box-shadow: 0 6px 0 var(--ink); transform: translate(-50%, -50%) translate(var(--x), var(--y)) rotate(var(--r)); transition: transform .35s cubic-bezier(.2,.8,.2,1); overflow: hidden; }
+.card:hover { transform: translate(-50%, -50%) translate(var(--x), calc(var(--y) - 26px)) rotate(var(--r)); z-index: 9; }
+.card .in { height: 100%; display: flex; flex-direction: column; background: var(--card); border: 1.5px solid var(--ink); border-radius: 10px; overflow: hidden; }
+.card .top { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px 7px; font: 600 10px/1 var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); }
+.card .top b { font: 500 12px/1 var(--mono); color: var(--ink); letter-spacing: 0; }
+.card .ph { flex: 1; margin: 0 8px; border: 1.5px solid var(--ink); border-radius: 7px; background: var(--paper-deep) center / cover no-repeat; }
+.card .bot { padding: 9px 10px 11px; display: grid; gap: 7px; }
+.card h3 { margin: 0; font: 800 18px/1.02 var(--display); white-space: nowrap; letter-spacing: -.02em; }
+.card .row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.chip { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 99px; background: var(--c); color: #fff; font: 600 10.5px/1 var(--body); letter-spacing: .06em; }
+.stat { font: 500 11px/1 var(--mono); color: var(--ink-soft); }
+.card.foil::after { content: ""; position: absolute; inset: -40% auto -40% -60%; width: 45%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.5), transparent); transform: rotate(18deg); animation: sheen 4.2s ease-in-out infinite; pointer-events: none; }
+.card.holo { background: var(--holo); }
+@keyframes sheen { 0%, 55% { left: -60%; } 85%, 100% { left: 130%; } }
+.c1 { --f: var(--common-f); --c: var(--common); --x: -232px; --y: 46px; --r: -12deg; }
+.c2 { --f: var(--uncommon-f); --c: var(--uncommon); --x: -112px; --y: 10px; --r: -6deg; }
+.c3 { --f: var(--rare-f); --c: var(--rare); --x: 8px; --y: -6px; --r: 0deg; }
+.c4 { --f: var(--epic-f); --c: var(--epic); --x: 128px; --y: 10px; --r: 6deg; }
+.c5 { --c: var(--one); --x: 248px; --y: 46px; --r: 12deg; }
+
+/* ladder */
+.ladder { padding-block: 64px 80px; border-top: 2px solid var(--ink); }
+.ladder h2 { font: 800 clamp(32px, 4.4vw, 52px)/1 var(--display); letter-spacing: -.03em; margin: 0 0 34px; max-width: 18ch; text-wrap: balance; }
+.tiers { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.tier { border: 2px solid var(--ink); border-radius: 16px; padding: 16px; background: var(--card); display: grid; gap: 10px; align-content: start; }
+.tier .sw { height: 10px; border-radius: 99px; background: var(--c); }
+.tier.one .sw { background: var(--holo); }
+.tier strong { font: 800 22px/1.05 var(--display); letter-spacing: -.02em; }
+.tier .pts { font: 500 30px/1 var(--mono); }
+.tier .rng { font: 500 13px/1.3 var(--mono); color: var(--ink-soft); }
+.modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.mode { border: 2px solid var(--ink); border-radius: 16px; padding: 20px; display: grid; gap: 6px; }
+.mode strong { font: 800 24px/1.05 var(--display); letter-spacing: -.02em; }
+.mode span { color: var(--ink-soft); }
+
+footer.wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; padding-block: 26px 40px; border-top: 2px solid var(--line); font: 500 13px/1.4 var(--mono); color: var(--faint); }
+
+@media (max-width: 900px) {
+  .hero { grid-template-columns: minmax(0, 1fr); padding-block: 8px 40px; gap: 8px; }
+  .hand { height: 330px; order: -1; margin-right: 0; }
+  .card { --w: 178px; }
+  .c2, .c3 { display: none; }
+  .c1 { --x: -112px; --y: 24px; --r: -9deg; } .c4 { --x: 0px; --y: 0px; --r: 0deg; } .c5 { --x: 112px; --y: 24px; --r: 9deg; }
+  .card h3 { font-size: 16px; } .card .top { font-size: 8.5px; } .stat { font-size: 9px; } .chip { font-size: 8.5px; height: 18px; padding: 0 7px; }
+  .tiers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tier.one { grid-column: 1 / -1; }
+  .modes { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 420px) {
+  .hand { height: 290px; } .card { --w: 150px; }
+  .c1 { --x: -96px; } .c5 { --x: 96px; }
+  .card .bot { padding: 6px 7px 8px; gap: 5px; } .card .ph { margin: 0 6px; } .card { padding: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .card.foil::after { animation: none; display: none; } .card, .btn { transition: none; } }
+</style>
+</head>
+<body>
+<header class="wrap">
+  <a class="mark" href="/" aria-label="Rarefind home">rarefind<i></i></a>
+  <a class="btn small ink" href="/play/">Play</a>
+</header>
+
+<main style="overflow-x: clip">
+  <section class="wrap hero">
+    <div>
+      <h1>Find the one <em>nobody</em> else found.</h1>
+      <p class="lede">Each prompt names a kind of thing. Go outside and photograph one. The fewer people who found the same thing, the rarer your card.</p>
+      <div class="cta" id="cta">
+        <a class="btn blaze" href="/play/">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          Play</a>
+      </div>
+    </div>
+    <div class="hand" aria-label="Five example cards for the prompt Something red, from Common to One of One">
+      <div class="card c1"><div class="in"><div class="top"><span>Something red</span><b>10</b></div><div class="ph" style="background-image:url(/ex/common.jpg)"></div><div class="bot"><h3>Fire hydrant</h3><div class="row"><span class="chip">COMMON</span><span class="stat">412 of 1,380</span></div></div></div></div>
+      <div class="card c2"><div class="in"><div class="top"><span>Something red</span><b>30</b></div><div class="ph" style="background-image:url(/ex/uncommon.jpg)"></div><div class="bot"><h3>Red bicycle</h3><div class="row"><span class="chip">UNCOMMON</span><span class="stat">64 of 1,380</span></div></div></div></div>
+      <div class="card c3 foil"><div class="in"><div class="top"><span>Something red</span><b>60</b></div><div class="ph" style="background-image:url(/ex/rare.jpg)"></div><div class="bot"><h3>Maple leaf</h3><div class="row"><span class="chip">RARE</span><span class="stat">21 of 1,380</span></div></div></div></div>
+      <div class="card c4 foil"><div class="in"><div class="top"><span>Something red</span><b>85</b></div><div class="ph" style="background-image:url(/ex/epic.jpg)"></div><div class="bot"><h3>Northern cardinal</h3><div class="row"><span class="chip">EPIC</span><span class="stat">6 of 1,380</span></div></div></div></div>
+      <div class="card c5 foil holo"><div class="in"><div class="top"><span>Something red</span><b>100</b></div><div class="ph" style="background-image:url(/ex/one.jpg)"></div><div class="bot"><h3>Rotary payphone</h3><div class="row"><span class="chip">ONE OF ONE</span><span class="stat">First find</span></div></div></div></div>
+    </div>
+  </section>
+
+  <section class="wrap ladder">
+    <h2>Every find lands in a tier.</h2>
+    <div class="tiers">
+      <div class="tier" style="--c:var(--common)"><div class="sw"></div><strong>Common</strong><span class="pts">10</span><span class="rng">what most people find</span></div>
+      <div class="tier" style="--c:var(--uncommon)"><div class="sw"></div><strong>Uncommon</strong><span class="pts">30</span><span class="rng">a step off the obvious</span></div>
+      <div class="tier" style="--c:var(--rare)"><div class="sw"></div><strong>Rare</strong><span class="pts">60</span><span class="rng">few people find it</span></div>
+      <div class="tier" style="--c:var(--epic)"><div class="sw"></div><strong>Epic</strong><span class="pts">85</span><span class="rng">almost nobody finds it</span></div>
+      <div class="tier one"><div class="sw"></div><strong>One of One</strong><span class="pts">100</span><span class="rng">nobody else has found it</span></div>
+    </div>
+    <div class="modes">
+      <div class="mode"><strong>Daily</strong><span>Five prompts a day, the same for everyone. One answer each. Hunt whenever you are out.</span></div>
+      <div class="mode"><strong>Squad</strong><span>Friends join with a code. Five timed rounds, then every card is revealed, rarest first.</span></div>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <span>Rarefind · CodeJam 16</span>
+  <span>Cards above are examples</span>
+</footer>
+
+<script>
+  // add store links when they exist
+  fetch('/links.json').then(r => r.ok ? r.json() : null).then(l => {
+    if (!l) return;
+    const cta = document.getElementById('cta');
+    const add = (href, label) => { const a = document.createElement('a'); a.className = 'btn'; a.href = href; a.textContent = label; cta.appendChild(a); };
+    if (l.ios) add(l.ios, 'iPhone');
+    if (l.android) add(l.android, 'Android');
+  }).catch(() => {});
+</script>
+</body>
+</html>
