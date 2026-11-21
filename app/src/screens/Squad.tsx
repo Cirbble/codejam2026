@@ -8,6 +8,7 @@ import { EmptySlot, GameCard, Sparkle } from '../components/GameCard';
 import { Bar, Button, H, IconButton, Label, Mono, Screen, T, tap } from '../components/ui';
 import { useNav } from '../nav';
 import { useSquad } from '../squad';
+import { SoloResults } from './Solo';
 import { C, F, TIERS } from '../theme';
 
 const AVATAR = ['#23914A', '#2563EB', '#8B35E0', '#E0457B', '#F2542D', '#0E7C86', '#9A6B00', '#475569'];
@@ -40,7 +41,7 @@ export default function Squad() {
   if (!squad.room) return <Connecting />;
   const r = squad.room;
   const screen =
-    r.phase === 'lobby' ? <Lobby room={r} /> : r.phase === 'countdown' || r.phase === 'hunting' ? <Hunt room={r} /> : r.phase === 'reveal' ? <RoundReveal room={r} /> : <Results room={r} />;
+    r.phase === 'lobby' ? <Lobby room={r} /> : r.phase === 'countdown' || r.phase === 'hunting' ? <Hunt room={r} /> : r.phase === 'reveal' ? <RoundReveal room={r} /> : r.solo ? <SoloResults room={r} /> : <Results room={r} />;
   return (
     <View style={{ flex: 1 }}>
       {screen}
@@ -233,9 +234,11 @@ function Hunt({ room }: { room: RoomView }) {
           </H>
           {room.prompt?.examples && <T style={{ color: '#A9B1A2' }}>Like {room.prompt.examples}</T>}
         </View>
-        <T style={{ fontFamily: F.bodyBold, textAlign: 'center', marginTop: 22 }}>
-          {room.players.filter((p) => p.found).length} of {room.players.length} found
-        </T>
+        {!room.solo && (
+          <T style={{ fontFamily: F.bodyBold, textAlign: 'center', marginTop: 22 }}>
+            {room.players.filter((p) => p.found).length} of {room.players.length} found
+          </T>
+        )}
       {room.players.length > 1 && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, justifyContent: 'center' }}>
         {room.players.map((p) => (
           <View key={p.id} style={[styles.pchip, p.found && { backgroundColor: C.ink }]}>
@@ -259,7 +262,7 @@ function Hunt({ room }: { room: RoomView }) {
             onPress={() => room.prompt && nav.push({ name: 'shoot', promptId: room.prompt.id, promptText: room.prompt.text, examples: room.prompt.examples, mode: 'squad' })}
           />
         )}
-        {host && <Button title="End round now" kind="quiet" onPress={() => squad.send({ t: 'skip' })} disabled={!squad.connected} />}
+        {host && <Button title={room.solo ? 'Skip this one' : 'End round now'} kind="quiet" onPress={() => squad.send({ t: 'skip' })} disabled={!squad.connected} />}
       </View>
     </Screen>
   );

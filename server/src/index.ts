@@ -13,6 +13,7 @@ import { dailyPrompts, nextTorontoMidnight, promptById, squadPrompts, torontoDay
 import { DATA_DIR, PHOTO_DIR, byDevice, cards, commitFinds, countFind, dailyEntry, dailyEntryMut, daily, dropCardsWithoutPhotos, flushAll, usedPhoto, promptTotals, saveCard, topLabels, writeAtomic } from './store.js';
 import { MAX_TRIES } from './room.js';
 import { Lru } from './lru.js';
+import { boardView, displayTeam, recordRun, resetBoard, teamKey } from './board.js';
 import type { Card, ClientMsg, ErrorCode, FindBody, Prompt, Reply, ServerMsg, WsErrorCode } from './types.js';
 
 const PORT = Number(process.env.PORT || 8787);
@@ -96,6 +97,17 @@ app.get('/api/collection', (req, res) => {
   const device = req.query.device;
   if (!validDevice(device)) return res.status(400).json({ error: 'bad_request', message: 'Missing device.' });
   res.json({ cards: cardsOf(device).sort((a, b) => b.at - a.at) });
+});
+
+app.get('/api/board', (_req, res) => {
+  res.setHeader('cache-control', 'no-store');
+  res.json(boardView());
+});
+app.post('/api/board/reset', (req, res) => {
+  const token = process.env.STATS_TOKEN;
+  if (!token || req.query.token !== token) return res.sendStatus(404);
+  resetBoard();
+  res.json({ ok: true });
 });
 
 app.get('/api/prompt/:id/top', (req, res) => {
@@ -495,6 +507,25 @@ function attach(conn: Conn, room: Room, playerId: string, secret: string) {
   broadcast(room, true);
 }
 
+// ---------------- People's Choice: solo runs + team leaderboard ----------------
+const SOLO_PER_IP = 10; // per 10 minutes
+const TEAM_RUNS_PER_HOUR = 20;
+const soloIpHits = new Map<string, number[]>();
+const teamHits = new Map<string, number[]>();
+function windowLimited(map: Map<string, number[]>, key: string, max: number, windowMs: number) {
+  const now = Date.now();
+  const hits = (map.get(key) ?? []).filter((t) => now - t < windowMs);
+  if (hits.length >= max) return true;
+  map.set(key, [...hits, now]);
+  return false;
+}
+/** A solo room just ended: put the run on the board and keep the standing for the ended view. */
+function recordSolo(room: Room) {
+  const p = [...room.players.values()][0];
+  if (!p || !room.team) return;
+  room.board = recordRun({ team: room.team, playerName: p.name, score: p.score, bestCardId: room.results().best[p.id] ?? null, at: Date.now() });
+}
+
 function leavePlayer(room: Room, playerId: string) {
   room.removePlayer(playerId);
   for (const c of conns) if (c.code === room.code && c.playerId === playerId) c.code = c.playerId = undefined;
@@ -509,11 +540,20 @@ function handle(conn: Conn, m: ClientMsg) {
   switch (m?.t) {
     case 'create': {
       if (replayOp(conn, m)) return;
+      const solo = !!m.solo;
+      let team: string | null = null;
+      if (solo) {
+        team = displayTeam(m.team);
+        if (!team) throw new WsError('other', 'Enter your team name.');
+        if (windowLimited(soloIpHits, conn.ip, SOLO_PER_IP, 10 * 60_000)) throw new WsError('rate', 'Too many solo runs from this network. Try again in a few minutes.');
+        if (windowLimited(teamHits, teamKey(team), TEAM_RUNS_PER_HOUR, 3600_000)) throw new WsError('rate', 'This team has played a lot this hour. Try again later.');
+      }
       if (limited(createHits, conn.ip, 10) || rooms.size >= 1000) throw new WsError('rate', 'Too many new squads. Try again in a minute.');
       const code = newCode();
-      const room = new Room(code, !!m.quick, Date.now, (q) => squadPrompts(q));
+      const room = new Room(code, solo || !!m.quick, Date.now, (q) => squadPrompts(q), { solo, team, onEnd: recordSolo });
       rooms.set(code, room);
       const p = room.addPlayer(m.name, validDevice(m.device) ? m.device : '');
+      if (solo) room.start(p.id); // a solo run starts on its own: 3 s countdown, then round 1
       rememberOp(m, code, p.id);
       attach(conn, room, p.id, p.secret);
       saveRooms();
@@ -638,7 +678,7 @@ function loadRooms() {
     if (!existsSync(ROOMS_FILE)) return;
     const saved = JSON.parse(readFileSync(ROOMS_FILE, 'utf8'));
     for (const s of saved.rooms ?? []) {
-      const r = Room.restore(s, Date.now, (q) => squadPrompts(q));
+      const r = Room.restore(s, Date.now, (q) => squadPrompts(q), recordSolo);
       if (!r.expired()) rooms.set(r.code, r);
     }
     console.log(`[persist] restored ${rooms.size} rooms`);

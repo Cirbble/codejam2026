@@ -40,6 +40,12 @@ export type RoomView = {
   quick: boolean;
   round: number;
   totalRounds: number;
+  /** solo run (People's Choice): one player, 3 rounds, auto-start */
+  solo: boolean;
+  team: string | null;
+  /** ended solo room only: the team's leaderboard rank (1-based) and best score after this run; null otherwise */
+  boardRank: number | null;
+  boardBest: number | null;
   prompt: Prompt | null;
   endsAt: number | null;
   /** reveal only: this reveal's length in ms (6 s + 3 s per card, max 20 s); null otherwise */
@@ -67,7 +73,7 @@ export type FindBody =
 export type Reply = { status: number; body: FindBody };
 
 export type ClientMsg =
-  | { t: 'create'; name: string; quick?: boolean; device: string; op?: string }
+  | { t: 'create'; name: string; quick?: boolean; device: string; op?: string; solo?: boolean; team?: string }
   | { t: 'join'; code: string; name: string; device: string; op?: string }
   | { t: 'resume'; code: string; playerId: string; secret: string }
   | { t: 'settings'; quick: boolean }

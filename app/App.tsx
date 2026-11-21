@@ -13,10 +13,18 @@ import DailyScreen from './src/screens/DailyScreen';
 import Home from './src/screens/Home';
 import Shoot from './src/screens/Shoot';
 import Squad from './src/screens/Squad';
+import { Board, SoloStart } from './src/screens/Solo';
+import { useSquad } from './src/squad';
 import { SquadProvider } from './src/squad';
 import { C } from './src/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+/** Quick play shows its own start screen until a solo room exists, then the shared room screens. */
+function SoloGate() {
+  const squad = useSquad();
+  return squad.session ? <Squad /> : <SoloStart />;
+}
 
 function Router() {
   const { route } = useNav();
@@ -31,6 +39,10 @@ function Router() {
       return <CardView card={route.card} />;
     case 'squad':
       return <Squad />;
+    case 'solo':
+      return <SoloGate />;
+    case 'board':
+      return <Board />;
     default:
       return <Home />;
   }

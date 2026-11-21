@@ -134,6 +134,7 @@ export default function Home() {
       </View>
       </View>
       <View style={{ gap: 12, marginTop: 12 }}>
+        <Button title="Quick play" icon="zap" kind="ink" onPress={() => nav.push({ name: 'solo' })} />
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <Button title="Today" icon="list" kind="line" onPress={() => nav.push({ name: 'daily' })} disabled={!daily} style={{ flex: 1, paddingHorizontal: 12 }} />
           <Button title="Squad" icon="users" kind="line" onPress={() => nav.push({ name: 'squad' })} style={{ flex: 1, paddingHorizontal: 12 }} />

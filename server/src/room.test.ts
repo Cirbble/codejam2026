@@ -525,3 +525,71 @@ test('unsettle takes back an accepted find whose room snapshot failed; the same 
   assert.equal(room.players.get(ps[2].id)!.score, 0);
   assert.equal(room.view().reveal!.length, 2);
 });
+
+test('solo run: auto-start flow, 3 quick rounds, opener + no repeats, 4 s reveal, early end, join full, board hook once', () => {
+  const clock = { t: 1_800_000_000_000 };
+  const now = () => clock.t;
+  const ended: Room[] = [];
+  const room = new Room('SOLO', false, now, (q) => squadPrompts(q, seeded('solo')), {
+    solo: true,
+    team: 'Team Rocket',
+    onEnd: (r) => {
+      ended.push(r);
+      r.board = { rank: 2, best: 90 };
+    },
+  });
+  const advance = (ms: number) => {
+    for (let t = 0; t < ms; t += 250) {
+      clock.t += 250;
+      room.tick();
+    }
+  };
+  const p = room.addPlayer('Ava', 'd'.repeat(32));
+  assert.equal(room.quick, true, 'solo is always quick');
+  assert.equal(room.start(p.id), true);
+  assert.equal(room.canJoin(), 'full');
+  const v0 = room.view();
+  assert.equal(v0.solo, true);
+  assert.equal(v0.team, 'Team Rocket');
+  assert.equal(v0.totalRounds, 3);
+  assert.equal(v0.phase, 'countdown');
+  assert.equal(room.prompts.length, 3);
+  assert.equal(room.prompts[0].id, QUICK_OPENER);
+  assert.equal(new Set(room.prompts.map((x) => x.id)).size, 3, 'never repeated');
+  assert.ok(room.prompts.every((x) => INDOOR.includes(x)));
+  advance(COUNTDOWN_MS);
+  assert.equal(room.phase, 'hunting');
+  assert.equal(room.endsAt, now() + QUICK_HUNT_MS);
+  // round 1: find -> early end, 4 s reveal
+  find(room, p.id, 's1', 'red mug', 60, 70);
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.view().revealMs, 4000);
+  advance(4000);
+  assert.equal(room.phase, 'hunting');
+  assert.equal(room.round, 2);
+  // round 2 times out after 60 s
+  advance(QUICK_HUNT_MS);
+  assert.equal(room.phase, 'reveal');
+  advance(4000);
+  find(room, p.id, 's3', 'blue pen', 30, 45);
+  assert.equal(room.view().boardRank, null, 'no board fields before the end');
+  advance(4000);
+  assert.equal(room.phase, 'ended');
+  assert.equal(ended.length, 1);
+  assert.equal(room.players.get(p.id)!.score, 90);
+  const v = room.view();
+  assert.equal(v.boardRank, 2);
+  assert.equal(v.boardBest, 90);
+  assert.equal(v.rounds.length, 3);
+  assert.equal(room.again(p.id), false, 'a solo run is one-shot');
+  // survives a restore without recording twice, and expires 10 minutes after the end
+  const back = Room.restore(JSON.parse(JSON.stringify(room.snapshot())), now, undefined, () => ended.push(back));
+  assert.equal(back.solo, true);
+  assert.equal(back.view().boardRank, 2);
+  assert.equal(back.canJoin(), 'full');
+  clock.t += 9 * 60_000;
+  assert.equal(room.expired(), false);
+  clock.t += 61_000;
+  assert.equal(room.expired(), true);
+  assert.equal(ended.length, 1);
+});

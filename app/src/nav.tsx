@@ -8,7 +8,9 @@ export type Route =
   | { name: 'shoot'; promptId: string; promptText: string; examples?: string; mode: 'daily' | 'squad' }
   | { name: 'collection' }
   | { name: 'card'; card: Card }
-  | { name: 'squad' };
+  | { name: 'squad' }
+  | { name: 'solo' }
+  | { name: 'board' };
 
 type Nav = { route: Route; push: (r: Route) => void; back: () => void; reset: (r?: Route) => void; depth: number };
 const Ctx = createContext<Nav>(null as unknown as Nav);

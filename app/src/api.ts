@@ -54,8 +54,14 @@ export type RoomView = {
   best?: Record<string, string>;
   roundWinners?: (string | null)[];
   winners?: string[];
-  revealMs?: number;
+  revealMs?: number | null;
+  solo?: boolean;
+  team?: string | null;
+  boardRank?: number;
+  boardBest?: number;
 };
+
+export type BoardRow = { team: string; best: number; plays: number; bestCard: Card | null; at: number };
 
 export const MAX_TRIES = 6;
 export const SITE = 'https://rarefind-production.up.railway.app';
@@ -149,4 +155,8 @@ export function rarityLine(c: { title: string; sameCount: number; totalCount: nu
   const what = c.title.charAt(0).toLowerCase() + c.title.slice(1);
   if (c.sameCount <= 1) return `Only you found a ${what} · ${c.totalCount} ${c.totalCount === 1 ? 'find' : 'finds'} for this prompt`;
   return `${c.sameCount} of ${c.totalCount} finds were a ${what}`;
+}
+
+export async function fetchBoard(): Promise<BoardRow[]> {
+  return (await getJSON<{ teams: BoardRow[] }>('/api/board')).teams;
 }

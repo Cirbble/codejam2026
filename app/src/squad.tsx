@@ -13,6 +13,7 @@ type Squad = {
   error: string | null;
   skew: number; // local - server ms
   create: (name: string, quick: boolean) => void;
+  solo: (name: string, team: string) => void;
   join: (code: string, name: string) => void;
   send: (m: Record<string, unknown>) => void;
   leave: () => void;
@@ -231,6 +232,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
       error,
       skew,
       create: (name, quick) => start({ t: 'create', name, quick }),
+      solo: (name, team) => start({ t: 'create', name, quick: true, solo: true, team }),
       join: (code, name) => start({ t: 'join', code: code.toUpperCase(), name }),
       send,
       leave,

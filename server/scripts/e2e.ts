@@ -197,6 +197,40 @@ check(left2?.t === 'left', 'repeating the leave is idempotent');
 a.ws.close();
 b.ws.close();
 
+// ---------------- solo (People's Choice) ----------------
+{
+  const teamName = `E2E  Test ${hex(2)}`;
+  const s = await connect({ t: 'create', name: 'Solo', quick: true, solo: true, team: teamName, op: hex(8) });
+  await waitFor(s, (r) => !!r, 2000);
+  check(s.room?.solo === true && s.room.team === teamName.replace(/\s+/g, ' ') && s.room.totalRounds === 3, `solo room ${s.code} for "${s.room?.team}"`);
+  check(await waitFor(s, (r) => r.phase === 'countdown' || r.phase === 'hunting', 2000), 'solo starts on its own');
+  const crash = await connect({ t: 'join', code: s.code, name: 'Crasher' }).catch((e) => e as Error);
+  check(crash instanceof Error && /full/.test(crash.message), 'joining a solo room -> full');
+  check(await waitFor(s, (r) => r.phase === 'hunting' && r.prompt?.id === 'i-red', 6000), 'solo round 1 is "something red"');
+  check(s.room.endsAt - s.room.now > 50_000 && s.room.endsAt - s.room.now <= 60_000, 'solo rounds are 60 s');
+  const sf = await squadFind(s, hydrant);
+  check(sf.json?.accepted === true, `solo find accepted: ${sf.json?.card?.label} ${sf.json?.card?.points} pts`);
+  check(await waitFor(s, (r) => r.phase === 'reveal', 3000) && s.room.revealMs === 4000, 'solo: early end, 4 s reveal');
+  check(await waitFor(s, (r) => r.phase === 'hunting' && r.round === 2, 6000), 'solo round 2 after the 4 s reveal');
+  const seen = new Set([s.room.prompt.id, 'i-red']);
+  sendWs(s, { t: 'skip' });
+  await waitFor(s, (r) => r.phase === 'reveal');
+  sendWs(s, { t: 'skip' });
+  check(await waitFor(s, (r) => r.phase === 'hunting' && r.round === 3, 3000) && !seen.has(s.room.prompt.id), 'round 3 prompt is new');
+  sendWs(s, { t: 'skip' });
+  await waitFor(s, (r) => r.phase === 'reveal');
+  sendWs(s, { t: 'skip' });
+  check(await waitFor(s, (r) => r.phase === 'ended'), 'solo run ended after 3 rounds');
+  const pts = sf.json?.card?.points;
+  check(typeof s.room.boardRank === 'number' && s.room.boardRank >= 1 && s.room.boardBest === pts, `ended view: boardRank ${s.room.boardRank}, boardBest ${s.room.boardBest}`);
+  const bd = await api('/api/board');
+  const row = bd.json?.teams?.find((t: any) => t.team === s.room.team);
+  check(row && row.best === pts && row.plays === 1 && row.bestCard?.id === sf.json.card.id && bd.json.updatedAt > 0, 'GET /api/board lists the team with its best card');
+  const reset = await fetch(`${BASE}/api/board/reset?token=nope`, { method: 'POST' });
+  check(reset.status === 404, 'board reset needs the token');
+  s.ws.close();
+}
+
 // ---------------- daily ----------------
 const dev = hex(16);
 const d0 = await api(`/api/daily?device=${dev}`);

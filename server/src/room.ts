@@ -10,6 +10,11 @@ export const REVEAL_PER_CARD_MS = 3_000;
 export const REVEAL_MAX_MS = 20_000;
 export const revealMsFor = (cards: number) => Math.min(REVEAL_MAX_MS, REVEAL_BASE_MS + REVEAL_PER_CARD_MS * cards);
 export const TOTAL_ROUNDS = 5;
+/** Solo (People's Choice table visit): one player, 3 quick rounds, short reveal, auto-start. */
+export const SOLO_ROUNDS = 3;
+export const SOLO_REVEAL_MS = 4_000;
+export const SOLO_ENDED_TTL_MS = 10 * 60_000;
+export type RoomOpts = { solo?: boolean; team?: string | null; onEnd?: (room: Room) => void };
 export const MAX_PLAYERS = 12;
 export const MAX_TRIES = 6;
 export const LOBBY_IDLE_MS = 30 * 60_000;
@@ -77,9 +82,26 @@ export class Room {
     public quick: boolean,
     private now: Clock = Date.now,
     private pick: PickPrompts = () => [],
+    opts: RoomOpts = {},
   ) {
     this.lastActivity = now();
     this.emptySince = now();
+    this.solo = !!opts.solo;
+    this.team = opts.solo ? (opts.team ?? null) : null;
+    this.onEnd = opts.onEnd;
+    if (this.solo) this.quick = true;
+  }
+
+  solo: boolean;
+  team: string | null;
+  private onEnd?: (room: Room) => void;
+  /** solo: the run went onto the leaderboard (guards against recording twice) */
+  boardRecorded = false;
+  /** solo, ended: the team's standing right after this run */
+  board: { rank: number; best: number } | null = null;
+
+  get totalRounds() {
+    return this.solo ? SOLO_ROUNDS : TOTAL_ROUNDS;
   }
 
   private touch() {
@@ -102,6 +124,7 @@ export class Room {
   }
 
   canJoin(): 'ok' | 'in_progress' | 'full' {
+    if (this.solo) return 'full';
     if (this.phase !== 'lobby') return 'in_progress';
     if (this.players.size >= MAX_PLAYERS) return 'full';
     return 'ok';
@@ -148,7 +171,7 @@ export class Room {
 
   // ---------------- flow ----------------
   setQuick(byId: string, quick: boolean): boolean {
-    if (byId !== this.hostId || this.phase !== 'lobby') return false;
+    if (byId !== this.hostId || this.phase !== 'lobby' || this.solo) return false;
     if (this.quick !== quick) {
       this.quick = quick;
       this.touch();
@@ -158,8 +181,8 @@ export class Room {
 
   start(byId: string): boolean {
     if (byId !== this.hostId || this.phase !== 'lobby' || this.players.size < 1) return false;
-    this.prompts = this.pick(this.quick).slice(0, TOTAL_ROUNDS);
-    if (this.prompts.length < TOTAL_ROUNDS) return false;
+    this.prompts = this.pick(this.quick).slice(0, this.totalRounds);
+    if (this.prompts.length < this.totalRounds) return false;
     for (const p of this.players.values()) p.score = 0;
     this.rounds = [];
     this.replies.clear();
@@ -187,7 +210,7 @@ export class Room {
   }
 
   again(byId: string): boolean {
-    if (byId !== this.hostId || this.phase !== 'ended') return false;
+    if (byId !== this.hostId || this.phase !== 'ended' || this.solo) return false; // a solo run is one-shot
     this.phase = 'lobby';
     this.round = 0;
     this.prompts = [];
@@ -245,7 +268,7 @@ export class Room {
   private toReveal() {
     this.phase = 'reveal';
     this.huntEndedAt = this.now();
-    this.revealMs = revealMsFor(this.found.size);
+    this.revealMs = this.solo ? SOLO_REVEAL_MS : revealMsFor(this.found.size);
     this.endsAt = this.now() + this.revealMs;
     this.rounds.push({ prompt: this.prompts[this.round - 1], cards: [] });
     this.syncRoundCards();
@@ -258,11 +281,19 @@ export class Room {
   }
 
   private afterReveal() {
-    if (this.round >= TOTAL_ROUNDS) {
+    if (this.round >= this.totalRounds) {
       this.phase = 'ended';
       this.endsAt = null;
       this.endedAt = this.now();
       this.found.clear();
+      if (this.solo && !this.boardRecorded) {
+        this.boardRecorded = true;
+        try {
+          this.onEnd?.(this);
+        } catch (e) {
+          console.warn('[room] onEnd failed', (e as Error).message);
+        }
+      }
       this.touch();
       return;
     }
@@ -352,7 +383,7 @@ export class Room {
     const reply = save({ status: 200, body: { accepted: true, card } });
     if (this.phase === 'reveal') {
       this.syncRoundCards();
-      this.revealMs = revealMsFor(this.found.size);
+      this.revealMs = this.solo ? SOLO_REVEAL_MS : revealMsFor(this.found.size);
       this.endsAt = Math.max(this.endsAt ?? 0, (this.huntEndedAt ?? this.now()) + this.revealMs, this.now() + LATE_SHOW_MS);
     } else this.checkEarlyEnd();
     return reply;
@@ -368,7 +399,11 @@ export class Room {
       now: this.now(),
       quick: this.quick,
       round: this.phase === 'lobby' ? 0 : this.round,
-      totalRounds: TOTAL_ROUNDS,
+      totalRounds: this.totalRounds,
+      solo: this.solo,
+      team: this.team,
+      boardRank: this.solo && this.phase === 'ended' ? (this.board?.rank ?? null) : null,
+      boardBest: this.solo && this.phase === 'ended' ? (this.board?.best ?? null) : null,
       prompt: publicPrompt(this.prompt),
       endsAt: this.endsAt,
       revealMs: this.phase === 'reveal' ? this.revealMs : null,
@@ -410,7 +445,7 @@ export class Room {
       if (this.phase === 'lobby' && now - this.emptySince > LOBBY_IDLE_MS) return true;
       if (now - this.emptySince > ANY_IDLE_MS) return true;
     }
-    return this.phase === 'ended' && this.endedAt != null && now - this.endedAt > ENDED_TTL_MS;
+    return this.phase === 'ended' && this.endedAt != null && now - this.endedAt > (this.solo ? SOLO_ENDED_TTL_MS : ENDED_TTL_MS);
   }
 
   // ---------------- persistence ----------------
@@ -435,12 +470,18 @@ export class Room {
       lastActivity: this.lastActivity,
       emptySince: this.emptySince,
       endedAt: this.endedAt,
+      solo: this.solo,
+      team: this.team,
+      boardRecorded: this.boardRecorded,
+      board: this.board,
     };
   }
 
   /** Restore after a redeploy. Timers are paused for the downtime so nobody loses hunting time. */
-  static restore(s: ReturnType<Room['snapshot']>, now: Clock = Date.now, pick?: PickPrompts): Room {
-    const r = new Room(s.code, s.quick, now, pick);
+  static restore(s: ReturnType<Room['snapshot']>, now: Clock = Date.now, pick?: PickPrompts, onEnd?: (room: Room) => void): Room {
+    const r = new Room(s.code, s.quick, now, pick, { solo: !!s.solo, team: s.team ?? null, onEnd });
+    r.boardRecorded = !!s.boardRecorded;
+    r.board = s.board ?? null;
     const down = Math.max(0, now() - (s.savedAt ?? now()));
     r.phase = s.phase;
     r.hostId = s.hostId;
