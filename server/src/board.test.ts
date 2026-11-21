@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'rarefind-board-'));
 const board = await import('./board.js');
+const rb = (r: any) => ({ rank: r.rank, best: r.best });
 
 test('team key: trimmed, whitespace collapsed, lowercased, 24 chars; first spelling is kept for display', () => {
   assert.equal(board.teamKey('  Team   Rocket  '), 'team rocket');
@@ -23,11 +24,11 @@ test('best run wins, ties go to the earlier run; sorted by best then earlier; ra
   board.resetBoard(0);
   board.recordRun({ runId: 'r3', team: 'Alpha', playerName: 'a', score: 90, bestCardId: null, at: 100 });
   const beta = board.recordRun({ runId: 'r4', team: 'Beta', playerName: 'b', score: 90, bestCardId: null, at: 200 });
-  assert.deepEqual(beta, { rank: 2, best: 90 }, 'same score, later -> behind');
+  assert.deepEqual(rb(beta), { rank: 2, best: 90 }, 'same score, later -> behind');
   board.recordRun({ runId: 'r5', team: 'Alpha', playerName: 'a2', score: 90, bestCardId: null, at: 300 }); // tie keeps the earlier
   assert.equal(board.boardView().teams[0].at, 100);
   const gamma = board.recordRun({ runId: 'r6', team: 'Gamma', playerName: 'g', score: 130, bestCardId: null, at: 400 });
-  assert.deepEqual(gamma, { rank: 1, best: 130 });
+  assert.deepEqual(rb(gamma), { rank: 1, best: 130 });
   const v = board.boardView();
   assert.deepEqual(v.teams.map((t) => [t.team, t.best, t.plays]), [['Gamma', 130, 1], ['Alpha', 90, 2], ['Beta', 90, 1]]);
   assert.equal(v.updatedAt, 400);
@@ -64,7 +65,7 @@ test('a board write failure throws and rolls back, so the same run can be record
   assert.throws(() => board.recordRun({ runId: 'later', team: 'Echo', playerName: 'e', score: 30, bestCardId: null, at: 5 }));
   assert.deepEqual(board.boardView().teams, []);
   rmSync(file, { recursive: true });
-  assert.deepEqual(board.recordRun({ runId: 'later', team: 'Echo', playerName: 'e', score: 30, bestCardId: null, at: 5 }), { rank: 1, best: 30 });
+  assert.deepEqual(rb(board.recordRun({ runId: 'later', team: 'Echo', playerName: 'e', score: 30, bestCardId: null, at: 5 })), { rank: 1, best: 30 });
   assert.equal(board.boardView().teams[0].plays, 1);
 });
 
@@ -82,7 +83,7 @@ test('moderation: hidden teams and "E2E " test teams are off the board; runs sta
   board.resetBoard(0);
   board.recordRun({ runId: 'h1', team: 'Spam Team', playerName: 's', score: 300, bestCardId: null, at: 1 });
   board.recordRun({ runId: 'h2', team: 'Real Team', playerName: 'r', score: 60, bestCardId: null, at: 2 });
-  assert.equal(board.recordRun({ runId: 'h3', team: 'E2E Test ab12', playerName: 'e', score: 999, bestCardId: null, at: 3 }), null, 'test team has no standing');
+  assert.equal(board.recordRun({ runId: 'h3', team: 'E2E Test ab12', playerName: 'e', score: 999, bestCardId: null, at: 3 }).rank, null, 'test team has no standing');
   assert.deepEqual(board.boardView().teams.map((t) => t.team), ['Spam Team', 'Real Team']);
   assert.equal(board.hideTeam('  spam   TEAM '), true);
   assert.deepEqual(board.boardView().teams.map((t) => t.team), ['Real Team']);
@@ -92,4 +93,39 @@ test('moderation: hidden teams and "E2E " test teams are off the board; runs sta
   assert.equal(board.boardView().teams.length, 2, 'shown again');
   const disk = JSON.parse(readFileSync(join(process.env.DATA_DIR!, 'board.json'), 'utf8'));
   assert.equal(disk.runs.length, 3);
+});
+
+test('counted runs are per (team, device): a rival phone cannot burn a team\'s runs; best is across devices', () => {
+  board.resetBoard(0);
+  const run = (id: string, device: string, score: number, at: number) => board.recordRun({ runId: id, team: 'Foxtrot', playerName: 'f', score, bestCardId: null, at, device });
+  // a rival burns 3 runs on their own phone with low scores
+  for (let i = 0; i < 3; i++) assert.equal(run(`rv${i}`, 'rival-phone', 10, i).counted, true);
+  const prac = run('rv3', 'rival-phone', 300, 3);
+  assert.deepEqual([prac.counted, prac.runsLeft], [false, 0], 'the rival\'s 4th run is practice');
+  assert.equal(board.boardView().teams[0].best, 10);
+  // the real team still has its 3 counted runs on its own phone
+  const t1 = run('t1', 'team-phone', 60, 10);
+  assert.deepEqual([t1.counted, t1.runsLeft, t1.best], [true, 2, 60]);
+  run('t2', 'team-phone', 85, 11);
+  const t3 = run('t3', 'team-phone', 40, 12);
+  assert.deepEqual([t3.counted, t3.runsLeft, t3.best], [true, 0, 85]);
+  const t4 = run('t4', 'team-phone', 200, 13);
+  assert.deepEqual([t4.counted, t4.runsLeft, t4.best], [false, 0, 85]);
+  const row = board.boardView().teams[0];
+  assert.deepEqual([row.best, row.plays], [85, 8]);
+  // idempotent replay returns the same counted info
+  assert.deepEqual(run('t1', 'team-phone', 60, 10), { ...t1, best: 85, rank: 1 });
+  const disk = readFileSync(join(process.env.DATA_DIR!, 'board.json'), 'utf8');
+  assert.ok(!disk.includes('team-phone'), 'device ids are stored hashed');
+});
+
+test('lastRun features the most recent visible run', () => {
+  board.resetBoard(0);
+  assert.equal(board.boardView().lastRun, null);
+  board.recordRun({ runId: 'l1', team: 'Hotel', playerName: 'h', score: 60, bestCardId: null, at: 1 });
+  board.recordRun({ runId: 'l2', team: 'India  Team', playerName: 'i', score: 30, bestCardId: null, at: 2 });
+  board.recordRun({ runId: 'l3', team: 'E2E Test zz', playerName: 'e', score: 99, bestCardId: null, at: 3 });
+  assert.deepEqual(board.boardView().lastRun, { team: 'India Team', score: 30, at: 2 }, 'test teams skipped');
+  board.hideTeam('India Team');
+  assert.deepEqual(board.boardView().lastRun, { team: 'Hotel', score: 60, at: 1 }, 'hidden teams skipped');
 });

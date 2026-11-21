@@ -60,6 +60,8 @@ export type RoomView = {
   team?: string | null;
   boardRank?: number;
   boardBest?: number;
+  counted?: boolean;
+  runsLeft?: number;
 };
 
 export type BoardRow = { team: string; best: number; plays: number; bestCard: Card | null; at: number };

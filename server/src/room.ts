@@ -22,6 +22,8 @@ export const ANY_IDLE_MS = 2 * 3600_000;
 export const ENDED_TTL_MS = 3 * 3600_000;
 /** A find received before the hunt ended still counts if its verdict lands within this window. */
 export const LATE_GRACE_MS = 20_000;
+/** Shutter pressed before the deadline ('shooting'): the upload may arrive up to this long after it. */
+export const SHOOT_GRACE_MS = 25_000;
 /** A late card that lands during the reveal stays on screen at least this long. */
 export const LATE_SHOW_MS = 4_000;
 /** The host role passes to a connected player after this long away (lobby and ended only). */
@@ -41,7 +43,8 @@ export type Player = {
   awaySince?: number | null;
 };
 
-type Pending = { submissionId: string; round: number; receivedAt: number };
+/** shot: the upload was announced by a 'shooting' message before the deadline (gets the upload grace). */
+type Pending = { submissionId: string; round: number; receivedAt: number; shot?: boolean };
 
 export type Precheck =
   | { kind: 'prior'; reply: Reply }
@@ -101,7 +104,7 @@ export class Room {
   runId: string | null = null;
   private recordRetryAt = 0;
   /** solo, ended: the team's standing right after this run */
-  board: { rank: number; best: number } | null = null;
+  board: { rank: number | null; best: number | null; counted?: boolean; runsLeft?: number } | null = null;
 
   get totalRounds() {
     return this.solo ? SOLO_ROUNDS : TOTAL_ROUNDS;
@@ -261,9 +264,20 @@ export class Room {
 
   /** In-flight finds for the revealed round, received before the hunt ended, still within the grace window. */
   latePending(): boolean {
-    if (this.phase !== 'reveal' || this.huntEndedAt == null || this.now() - this.huntEndedAt >= LATE_GRACE_MS) return false;
-    for (const p of this.pending.values()) if (p.round === this.round && p.receivedAt <= this.huntEndedAt) return true;
+    if (this.phase !== 'reveal' || this.huntEndedAt == null) return false;
+    const since = this.now() - this.huntEndedAt;
+    for (const p of this.pending.values())
+      if (p.round === this.round && p.receivedAt <= this.huntEndedAt && since < (p.shot ? SHOOT_GRACE_MS + LATE_GRACE_MS : LATE_GRACE_MS)) return true;
+    // shutter pressed before the buzzer, upload not here yet
+    for (const [pid, s] of this.shots) if (s.round === this.round && !this.found.has(pid) && !this.pending.has(pid) && since < SHOOT_GRACE_MS) return true;
     return false;
+  }
+
+  /** WS 'shooting': the player pressed the shutter for this prompt; counts only before the deadline. */
+  markShooting(playerId: string, promptId: string): boolean {
+    if (this.phase !== 'hunting' || this.prompt?.id !== promptId || !this.players.has(playerId) || this.found.has(playerId)) return false;
+    if (!this.shots.has(playerId)) this.shots.set(playerId, { round: this.round, at: this.now() });
+    return true;
   }
 
   private tickHost(now: number) {
@@ -279,8 +293,12 @@ export class Room {
   /** The find whose settle() triggered the current early reveal (so a failed save can roll it back). */
   private earlyEnd: { key: string; round: number; huntEndsAt: number | null } | null = null;
 
+  /** playerId -> shutter press during the current hunt */
+  shots = new Map<string, { round: number; at: number }>();
+
   private toHunting() {
     this.earlyEnd = null;
+    this.shots.clear();
     this.phase = 'hunting';
     this.found.clear();
     this.tries.clear();
@@ -336,12 +354,16 @@ export class Room {
     const prior = this.replies.get(`${playerId}:${submissionId}`);
     if (prior) return { kind: 'prior', reply: prior };
     if (!this.players.has(playerId)) return { kind: 'error', reply: err(403, 'bad_request', 'Join the squad first.') };
-    if (this.phase !== 'hunting') return { kind: 'error', reply: err(409, 'closed', 'This prompt is closed.') };
+    const shot = this.shots.get(playerId);
+    const shotGrace =
+      this.phase === 'reveal' && shot?.round === this.round && this.huntEndedAt != null && shot.at <= this.huntEndedAt && this.now() - this.huntEndedAt <= SHOOT_GRACE_MS;
+    if (this.phase !== 'hunting' && !shotGrace) return { kind: 'error', reply: err(409, 'closed', 'This prompt is closed.') };
     if (this.found.has(playerId)) return { kind: 'error', reply: err(409, 'locked', 'You already locked a find this round.') };
     if ((this.tries.get(playerId) ?? 0) >= MAX_TRIES) return { kind: 'error', reply: err(409, 'locked', 'No tries left this round.') };
     if (this.pending.has(playerId)) return { kind: 'error', reply: { status: 429, body: { error: 'rate', message: 'One photo at a time.', retryAfterMs: 2000 } } };
-    const receivedAt = this.now();
-    this.pending.set(playerId, { submissionId, round: this.round, receivedAt });
+    // a late upload announced before the buzzer counts as received at the shutter press
+    const receivedAt = shotGrace ? shot!.at : this.now();
+    this.pending.set(playerId, { submissionId, round: this.round, receivedAt, shot: shotGrace });
     return { kind: 'ok', round: this.round, prompt: this.prompts[this.round - 1], receivedAt };
   }
 
@@ -417,7 +439,9 @@ export class Room {
     };
     if (!p) return err(403, 'bad_request', 'You left the squad.');
     const sameRound = this.round === round && (this.phase === 'hunting' || this.phase === 'reveal');
-    const inTime = this.phase === 'hunting' || (pend != null && this.huntEndedAt != null && pend.receivedAt <= this.huntEndedAt && this.now() - this.huntEndedAt < LATE_GRACE_MS);
+    if (pend?.shot) this.shots.delete(playerId); // the announced upload has landed
+    const grace = pend?.shot ? SHOOT_GRACE_MS + LATE_GRACE_MS : LATE_GRACE_MS;
+    const inTime = this.phase === 'hunting' || (pend != null && this.huntEndedAt != null && pend.receivedAt <= this.huntEndedAt && this.now() - this.huntEndedAt < grace);
     if (!sameRound || !inTime) return save(err(409, 'closed', 'Time ran out on that prompt.'));
     const tries = (this.tries.get(playerId) ?? 0) + 1;
     this.tries.set(playerId, tries);
@@ -460,6 +484,8 @@ export class Room {
       team: this.team,
       boardRank: this.solo && this.phase === 'ended' ? (this.board?.rank ?? null) : null,
       boardBest: this.solo && this.phase === 'ended' ? (this.board?.best ?? null) : null,
+      counted: this.solo && this.phase === 'ended' ? (this.board?.counted ?? null) : null,
+      runsLeft: this.solo && this.phase === 'ended' ? (this.board?.runsLeft ?? null) : null,
       prompt: publicPrompt(this.prompt),
       endsAt: this.endsAt,
       revealMs: this.phase === 'reveal' ? this.revealMs : null,
@@ -521,6 +547,7 @@ export class Room {
       players: [...this.players.values()],
       found: [...this.found],
       tries: [...this.tries],
+      shots: [...this.shots],
       rounds: this.rounds,
       replies: [...this.replies],
       lastActivity: this.lastActivity,
@@ -551,6 +578,7 @@ export class Room {
     for (const p of s.players) r.players.set(p.id, { ...p, connected: false, awaySince: now() });
     r.found = new Map(s.found);
     r.tries = new Map(s.tries);
+    r.shots = new Map(s.shots ?? []);
     r.rounds = s.rounds;
     r.replies = new Map(s.replies);
     r.lastActivity = s.lastActivity;

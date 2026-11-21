@@ -23,6 +23,16 @@ export function scoreFind(aiRarity: number, sameCount: number, totalCount: numbe
   return { rarity, tier, points: TIER_POINTS[tier] };
 }
 
+/**
+ * Solo (board) scoring: from aiRarity alone, no crowd blend and no first-ever bonus, so identical finds score the
+ * same at every table and at any time of day. Same tiers.
+ */
+export function scoreSolo(aiRarity: number): { rarity: number; tier: Tier; points: number } {
+  const rarity = clamp(Math.round(Number(aiRarity) || 0), 0, 100);
+  const tier = tierFor(rarity, false, rarity);
+  return { rarity, tier, points: TIER_POINTS[tier] };
+}
+
 export function tierFor(rarity: number, firstOfKind = false, aiRarity = 100): Tier {
   if ((rarity >= 97 || firstOfKind) && aiRarity >= ONE_MIN_AI) return 'one';
   if (rarity >= 85) return 'epic';

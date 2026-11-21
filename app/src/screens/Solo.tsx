@@ -1,7 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useEffect, useState } from 'react';
-import { FlatList, Linking, Platform, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { AppState, FlatList, Linking, Platform, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';
 import { BoardRow, cap, fetchBoard, type RoomView } from '../api';
 import { EmptySlot, GameCard } from '../components/GameCard';
@@ -14,7 +14,11 @@ import { C, F, TIERS } from '../theme';
 export function SoloStart() {
   const nav = useNav();
   const squad = useSquad();
-  const [perm, requestPerm] = useCameraPermissions();
+  const [perm, requestPerm, getPerm] = useCameraPermissions();
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => st === 'active' && getPerm().then((p) => p.granted && setCamBlocked(false)));
+    return () => sub.remove();
+  }, [getPerm]);
   const [team, setTeam] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -58,8 +62,9 @@ export function SoloStart() {
             AsyncStorage.multiSet([['rarefind.team', t], ['rarefind.name', name.trim()]]).catch(() => {});
             setBusy(true);
             // ask for the camera now, so the permission prompt doesn't eat round one
-            let granted = !!perm?.granted;
-            if (!granted && perm?.canAskAgain !== false) granted = !!(await requestPerm().catch(() => null))?.granted;
+            const fresh = await getPerm().catch(() => perm);
+            let granted = !!fresh?.granted;
+            if (!granted && fresh?.canAskAgain !== false) granted = !!(await requestPerm().catch(() => null))?.granted;
             if (!granted) {
               setBusy(false);
               setCamBlocked(true);
@@ -108,20 +113,22 @@ export function SoloResults({ room }: { room: RoomView }) {
           <H size={72} style={{ fontVariant: ['tabular-nums'] }}>
             {me?.score ?? 0}
           </H>
-          {room.boardRank != null && (
+          {room.counted === false ? (
+            <T style={{ fontFamily: F.bodyBold, fontSize: 18, color: C.inkSoft }}>Practice run · doesn't count</T>
+          ) : room.boardRank != null ? (
             <T style={{ fontFamily: F.bodyBold, fontSize: 18 }}>
               {room.team} is #{room.boardRank} on the board
             </T>
-          )}
+          ) : null}
         </View>
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10 }}>
           {room.rounds.map((r, i) => {
             const c = r.cards[0];
             return c ? (
-              <GameCard key={i} card={c} width={Math.min(104, (width - 60) / 3)} flat live={false} />
+              <GameCard key={i} card={c} width={Math.min(118, (width - 60) / 3)} flat live={false} />
             ) : (
               <View key={i} style={{ alignItems: 'center', gap: 6 }}>
-                <EmptySlot width={Math.min(104, (width - 60) / 3)} />
+                <EmptySlot width={Math.min(118, (width - 60) / 3)} />
                 <Mono style={{ color: C.ink }}>No find</Mono>
               </View>
             );
@@ -134,7 +141,7 @@ export function SoloResults({ room }: { room: RoomView }) {
         )}
       </ScrollView>
       <View style={{ gap: 10 }}>
-        <Button title="Play again" icon="rotate-ccw" onPress={again} />
+        <Button title={room.runsLeft === 0 ? 'Practice again' : 'Play again'} icon="rotate-ccw" kind={room.runsLeft === 0 ? 'line' : 'blaze'} onPress={again} />
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <Button title="Team board" icon="award" kind="line" onPress={() => nav.push({ name: 'board' })} style={{ flex: 1, paddingHorizontal: 10 }} />
           <Button title="Squad" icon="users" kind="line" onPress={() => { squad.leave(); nav.reset({ name: 'squad' }); }} style={{ flex: 1, paddingHorizontal: 10 }} />

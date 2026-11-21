@@ -8,7 +8,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Room } from './room.js';
 import { IP_HOURLY_JUDGE, ipAttempts, judgePhoto, judgeStats, type Judgement } from './judge.js';
-import { canonicalLabel, normalizeLabel, scoreFind, titleFor } from './rarity.js';
+import { canonicalLabel, normalizeLabel, scoreFind, scoreSolo, titleFor } from './rarity.js';
 import { dailyPrompts, nextTorontoMidnight, promptById, soloPrompts, squadPrompts, torontoDay } from './prompts.js';
 import { thumbnail, THUMB_W } from './thumbs.js';
 import { DATA_DIR, PHOTO_DIR, byDevice, cards, commitFinds, countFind, peekCounts, markPendingSquad, clearPendingSquad, pendingSquads, releaseUsedPhoto, resetPromptCounts, dailyEntry, dailyEntryMut, daily, dropCardsWithoutPhotos, flushAll, usedPhoto, promptTotals, saveCard, topLabels, writeAtomic } from './store.js';
@@ -38,7 +38,6 @@ const LIMITS = {
   WS_PENDING_PER_IP: envInt('WS_PENDING_PER_IP', 300),
   SOLO_PER_IP: envInt('SOLO_PER_IP', 80), // per 10 minutes
   TEAM_RUNS_PER_HOUR: envInt('TEAM_RUNS_PER_HOUR', 20),
-  SOLO_DEVICE_GAP_MS: envInt('SOLO_DEVICE_GAP_MS', 30_000),
 };
 
 const rooms = new Map<string, Room>();
@@ -268,12 +267,13 @@ function isTestTraffic(headers: IncomingHttpHeaders): boolean {
   return !!token && headers['x-rarefind-test'] === token;
 }
 
-function mintCard(prompt: Prompt, j: Judgement, jpeg: Buffer, device: string, extra: Partial<Card>, crowdKey = device, test = false): { card: Card; undo: () => void } {
+function mintCard(prompt: Prompt, j: Judgement, jpeg: Buffer, device: string, extra: Partial<Card>, crowdKey = device, test = false, solo = false): { card: Card; undo: () => void } {
   const label = canonicalLabel(normalizeLabel(j.label), promptTotals(prompt.id).map);
   const imageHash = hashOf(jpeg);
   const count = test ? peekCounts(prompt.id, label) : countFind(prompt.id, label, crowdKey, imageHash);
   const { sameCount, totalCount, firstEver } = count;
-  const s = scoreFind(j.aiRarity, sameCount, totalCount, firstEver);
+  // solo (board) runs score from aiRarity alone, so a find scores the same at any table and any time
+  const s = solo ? scoreSolo(j.aiRarity) : scoreFind(j.aiRarity, sameCount, totalCount, firstEver);
   const id = randomBytes(12).toString('hex');
   const card: Card = {
     id,
@@ -407,7 +407,7 @@ async function squadFind(b: any, device: string, submissionId: string, ip: strin
     reply = room.settle(player.id, submissionId, pre.round, outcomeOf(r.j), () => {
       const dev = player.device || device;
       // solo runs count crowd stats per (device, team): one phone passed between tables still counts each team
-      made = mintCard(pre.prompt, r.j, jpeg, dev, { mode: 'squad', playerName: player.name, playerId: player.id }, room.solo && room.team ? `${dev}|team:${teamKey(room.team)}` : dev, test);
+      made = mintCard(pre.prompt, r.j, jpeg, dev, { mode: 'squad', playerName: player.name, playerId: player.id }, room.solo && room.team ? `${dev}|team:${teamKey(room.team)}` : dev, test, room.solo);
       // journal it in the same atomic commit: a crash before the room snapshot is reconciled on startup
       markPendingSquad(made.card.id, { code: room.code, playerId: player.id, submissionId, round: pre.round });
       try {
@@ -571,7 +571,11 @@ function attach(conn: Conn, room: Room, playerId: string, secret: string) {
 }
 
 // ---------------- People's Choice: solo runs + team leaderboard ----------------
-const soloDeviceAt = new Map<string, number>();
+/** The phone's solo run still in progress (countdown, hunting or reveal), if any. Scans rooms, so it survives restarts. */
+function activeSoloRun(device: string): Room | undefined {
+  for (const r of rooms.values()) if (r.solo && r.phase !== 'ended' && r.phase !== 'lobby' && [...r.players.values()].some((p) => p.device === device)) return r;
+  return undefined;
+}
 const soloIpHits = new Map<string, number[]>();
 const teamHits = new Map<string, number[]>();
 /** Solo runs share one fixed prompt set per Toronto day; squads draw at random. */
@@ -588,7 +592,7 @@ function recordSolo(room: Room) {
   const p = [...room.players.values()][0];
   if (!p || !room.team) return;
   // throws on a board write failure: the room keeps boardRecorded=false and retries (idempotent by runId)
-  room.board = recordRun({ runId: room.runId ?? room.code, team: room.team, playerName: p.name, score: p.score, bestCardId: room.results().best[p.id] ?? null, at: room.endedAt ?? Date.now() });
+  room.board = recordRun({ runId: room.runId ?? room.code, team: room.team, playerName: p.name, score: p.score, bestCardId: room.results().best[p.id] ?? null, at: room.endedAt ?? Date.now(), device: p.device });
 }
 
 function leavePlayer(room: Room, playerId: string) {
@@ -611,18 +615,19 @@ function handle(conn: Conn, m: ClientMsg) {
         team = displayTeam(m.team);
         if (!team) throw new WsError('other', 'Enter your team name.');
         if (!validDevice(m.device)) throw new WsError('other', 'Missing device.');
-        const since = Date.now() - (soloDeviceAt.get(m.device) ?? 0);
-        if (since < LIMITS.SOLO_DEVICE_GAP_MS) throw new WsError('rate', `One solo run every ${Math.round(LIMITS.SOLO_DEVICE_GAP_MS / 1000)} s per phone. Try again in ${Math.ceil((LIMITS.SOLO_DEVICE_GAP_MS - since) / 1000)} s.`);
+        // one run at a time per phone; "Play again" right after a run ends is fine
+        if (activeSoloRun(m.device)) throw new WsError('rate', 'This phone is already in a solo run. Finish or leave it first.');
         if (windowLimited(soloIpHits, conn.ip, LIMITS.SOLO_PER_IP, 10 * 60_000)) throw new WsError('rate', 'Too many solo runs from this network. Try again in a few minutes.');
         if (windowLimited(teamHits, teamKey(team), LIMITS.TEAM_RUNS_PER_HOUR, 3600_000)) throw new WsError('rate', 'This team has played a lot this hour. Try again later.');
-        soloDeviceAt.set(m.device, Date.now());
       }
       if (limited(createHits, conn.ip, LIMITS.CREATE_PER_IP_MIN) || rooms.size >= 1000) throw new WsError('rate', 'Too many new squads. Try again in a minute.');
       const code = newCode();
       const room = new Room(code, solo || !!m.quick, Date.now, pickFor(solo), { solo, team, onEnd: recordSolo });
       rooms.set(code, room);
       const p = room.addPlayer(m.name, validDevice(m.device) ? m.device : '');
-      if (solo) room.start(p.id); // a solo run starts on its own: 3 s countdown, then round 1
+      if (solo) {
+        room.start(p.id); // a solo run starts on its own: 3 s countdown, then round 1
+      }
       rememberOp(m, code, p.id);
       attach(conn, room, p.id, p.secret);
       saveRooms();
@@ -675,6 +680,9 @@ function handle(conn: Conn, m: ClientMsg) {
     case 'settings':
       if (!room.setQuick(me, !!m.quick)) throw new WsError('other', 'Only the host can change settings in the lobby.');
       break;
+    case 'shooting':
+      room.markShooting(me, String((m as any).promptId ?? '')); // silent: only extends the upload grace
+      return;
     case 'skip':
       if (!room.skip(me)) throw new WsError('other', 'Only the host can skip.');
       break;

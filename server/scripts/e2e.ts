@@ -231,11 +231,12 @@ b.ws.close();
   check(s.room?.solo === true && s.room.team === teamName.replace(/\s+/g, ' ') && s.room.totalRounds === 3, `solo room ${s.code} for "${s.room?.team}"`);
   check(await waitFor(s, (r) => r.phase === 'countdown' || r.phase === 'hunting', 2000), 'solo starts on its own');
   const again2 = await connect({ t: 'create', name: 'Solo', quick: true, solo: true, team: teamName, op: hex(8) }, s.device).catch((e) => e as Error);
-  check(again2 instanceof Error && /rate/.test(again2.message), 'one solo run per phone every 30 s');
+  check(again2 instanceof Error && /rate/.test(again2.message), 'one solo run at a time per phone');
   const crash = await connect({ t: 'join', code: s.code, name: 'Crasher' }).catch((e) => e as Error);
   check(crash instanceof Error && /full/.test(crash.message), 'joining a solo room -> full');
   check(await waitFor(s, (r) => r.phase === 'hunting' && r.prompt?.id === 'i-red', 6000), 'solo round 1 is "something red"');
   check(s.room.endsAt - s.room.now > 50_000 && s.room.endsAt - s.room.now <= 60_000, 'solo rounds are 60 s');
+  sendWs(s, { t: 'shooting', promptId: s.room.prompt.id });
   const sf = await squadFind(s, hydrant);
   check(sf.json?.accepted === true, `solo find accepted: ${sf.json?.card?.label} ${sf.json?.card?.points} pts`);
   check(await waitFor(s, (r) => r.phase === 'reveal', 3000) && s.room.revealMs === 4000, 'solo: early end, 4 s reveal');
@@ -251,12 +252,21 @@ b.ws.close();
   check(await waitFor(s, (r) => r.phase === 'ended'), 'solo run ended after 3 rounds');
   const pts = sf.json?.card?.points;
   const bd = await api('/api/board');
+  check(bd.json && 'lastRun' in bd.json, `board has lastRun (${JSON.stringify(bd.json?.lastRun)})`);
   const row = bd.json?.teams?.find((t: any) => t.team === s.room.team);
   if (PROD) {
     check(s.room.boardRank === null && !row && Array.isArray(bd.json?.teams), 'E2E test team stays off the production board');
   } else {
     check(typeof s.room.boardRank === 'number' && s.room.boardRank >= 1 && s.room.boardBest === pts, `ended view: boardRank ${s.room.boardRank}, boardBest ${s.room.boardBest}`);
+    check(s.room.counted === true && s.room.runsLeft === 2, `first run on this phone counted (runsLeft ${s.room.runsLeft})`);
     check(row && row.best === pts && row.plays === 1 && row.bestCard?.id === sf.json.card.id && bd.json.updatedAt > 0, 'GET /api/board lists the team with its best card');
+  }
+  const again3 = await connect({ t: 'create', name: 'Solo', quick: true, solo: true, team: teamName, op: hex(8) }, s.device).catch((e) => e as Error);
+  check(!(again3 instanceof Error) && again3.code !== s.code, `"Play again" right after the end starts a new run (${again3 instanceof Error ? again3.message : again3.code})`);
+  if (!(again3 instanceof Error)) {
+    sendWs(again3, { t: 'leave' });
+    await sleep(300);
+    again3.ws.close();
   }
   const reset = await fetch(`${BASE}/api/board/reset?token=nope`, { method: 'POST' });
   check(reset.status === 404, 'board reset needs the token');

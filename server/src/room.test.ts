@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { COUNTDOWN_MS, HUNT_MS, MAX_TRIES, QUICK_HUNT_MS, REVEAL_MAX_MS as REVEAL_MS, Room, LOBBY_IDLE_MS, revealMsFor } from './room.js';
-import { scoreFind, tierFor, normalizeLabel, canonicalLabel } from './rarity.js';
+import { scoreFind, scoreSolo, tierFor, normalizeLabel, canonicalLabel } from './rarity.js';
 import { INDOOR, OUTDOOR, dailyPrompts, soloPrompts, squadPrompts, seeded, torontoDay, nextTorontoMidnight, QUICK_OPENER } from './prompts.js';
 import type { Card, PromptDef } from './types.js';
 
@@ -675,4 +675,63 @@ test('startup reconciliation: restoreCredit credits an open round, refuses a clo
   room.skip(ps[0].id);
   room.skip(ps[0].id);
   assert.equal(room.restoreCredit(ps[1].id, 'old', 1, card('x', 'P1', 10, 20, ps[1].id)), false, 'round 1 is closed');
+});
+
+test('ended solo view says whether the run counted and how many counted runs are left', () => {
+  const clock = { t: 1_800_000_000_000 };
+  const room = new Room('PRAC', true, () => clock.t, () => soloPrompts('2026-11-22'), {
+    solo: true,
+    team: 'Golf',
+    onEnd: (r) => (r.board = { rank: 3, best: 85, counted: false, runsLeft: 0 }),
+  });
+  const p = room.addPlayer('G', 'g'.repeat(32));
+  room.start(p.id);
+  assert.equal(room.view().counted, null);
+  while (room.phase !== 'ended') room.skip(p.id);
+  const v = room.view();
+  assert.deepEqual([v.counted, v.runsLeft, v.boardRank, v.boardBest], [false, 0, 3, 85]);
+});
+
+test('solo scoring uses aiRarity alone: same find, same points at any table', () => {
+  assert.deepEqual(scoreSolo(42), { rarity: 42, tier: 'uncommon', points: 30 });
+  assert.deepEqual(scoreSolo(39), { rarity: 39, tier: 'common', points: 10 });
+  assert.deepEqual(scoreSolo(65), { rarity: 65, tier: 'rare', points: 60 });
+  assert.deepEqual(scoreSolo(96), { rarity: 96, tier: 'epic', points: 85 });
+  assert.deepEqual(scoreSolo(97), { rarity: 97, tier: 'one', points: 100 });
+  assert.equal(scoreSolo(85).points, 85, 'no first-ever bonus (scoreFind would give 100 for a first find at 85)');
+  assert.equal(scoreFind(85, 1, 1, true).points, 100);
+});
+
+test('upload grace: a shutter press before the buzzer lets the upload land up to 25 s late', () => {
+  const { room, ps, advance, now } = setup(false, 3);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const pid = room.prompt!.id;
+  assert.equal(room.markShooting(ps[0].id, 'wrong-prompt'), false);
+  advance(HUNT_MS - 2000);
+  assert.equal(room.markShooting(ps[0].id, pid), true, 'pressed 2 s before the buzzer');
+  advance(2000);
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.markShooting(ps[1].id, pid), false, 'too late to announce');
+  advance(22_000); // slow upload: arrives 22 s after the deadline, reveal held meanwhile
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.round, 1);
+  const pre = room.precheck(ps[0].id, 'slow-upload');
+  assert.equal(pre.kind, 'ok', 'announced upload accepted after the deadline');
+  assert.equal(room.precheck(ps[1].id, 'no-shot').kind, 'error', 'no announcement -> closed');
+  advance(10_000); // judging takes 10 s more (32 s after the deadline)
+  const r = room.settle(ps[0].id, 'slow-upload', 1, { accepted: true }, () => card('bench', 'P0', 30, 50, ps[0].id));
+  assert.equal((r.body as any).accepted, true);
+  assert.equal(room.view().reveal!.length, 1);
+  advance(REVEAL_MS);
+  assert.equal(room.round, 2, 'moves on once the upload is in');
+  // a press that is never followed by an upload holds the reveal at most 25 s
+  const p2 = room.prompt!.id;
+  advance(QUICK_HUNT_MS); // (not quick) still hunting
+  room.markShooting(ps[1].id, p2);
+  room.skip(ps[0].id);
+  assert.equal(room.phase, 'reveal');
+  const t0 = now();
+  while (room.phase === 'reveal' && now() - t0 < 60_000) advance(250);
+  assert.ok(now() - t0 >= 25_000 && now() - t0 < 27_000, `held ${now() - t0} ms`);
 });

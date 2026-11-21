@@ -46,6 +46,9 @@ export type RoomView = {
   /** ended solo room only: the team's leaderboard rank (1-based) and best score after this run; null otherwise */
   boardRank: number | null;
   boardBest: number | null;
+  /** ended solo room only: whether this run counted for the team (first 3 per team per phone), and counted runs left on this phone */
+  counted: boolean | null;
+  runsLeft: number | null;
   prompt: Prompt | null;
   endsAt: number | null;
   /** reveal only: this reveal's length in ms (6 s + 3 s per card, max 20 s); null otherwise */
@@ -81,7 +84,8 @@ export type ClientMsg =
   | { t: 'skip' }
   | { t: 'again' }
   | { t: 'kick'; id: string }
-  | { t: 'leave'; code?: string; playerId?: string; secret?: string };
+  | { t: 'leave'; code?: string; playerId?: string; secret?: string }
+  | { t: 'shooting'; promptId: string };
 
 export type WsErrorCode = 'no_room' | 'full' | 'in_progress' | 'kicked' | 'rate' | 'other';
 

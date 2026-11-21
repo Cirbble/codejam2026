@@ -90,6 +90,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
     busy.current = true;
     setReady(false);
     tap('medium');
+    if (mode === 'squad') squad.send({ t: 'shooting', promptId }); // a slow upload that started before the buzzer still counts
     try {
       const pic = await cam.current.takePictureAsync({ quality: 0.6, shutterSound: false });
       if (!pic?.uri) throw new Error('no photo');

@@ -105,6 +105,7 @@ export default function Home() {
             {daily?.score ?? 0}
           </H>
           <T style={{ fontFamily: F.bodyBold, color: C.inkSoft }}>pts · {found} of {total} today</T>
+          <Feather name="chevron-right" size={18} color={C.inkSoft} style={{ alignSelf: 'center' }} />
         </View>
       </Pressable>
 
@@ -143,12 +144,13 @@ export default function Home() {
             <View style={[styles.shoot, { backgroundColor: '#2A3025', borderColor: '#2A3025' }]} />
           </View>
         ) : (
-          <View style={[styles.next, { backgroundColor: C.card, borderWidth: 2, borderColor: C.ink }]}>
+          <Pressable accessibilityRole="button" onPress={() => nav.push({ name: 'daily' })} style={[styles.next, { backgroundColor: C.card, borderWidth: 2, borderColor: C.ink }]}>
             <View style={{ flex: 1, gap: 6 }}>
-              <Label>{done ? 'All five found' : "That's today's hunt"}</Label>
+              <Label>{done ? 'All five found' : `${found} found · ${total - found} missed`}</Label>
               <H size={24}>New prompts at midnight</H>
             </View>
-          </View>
+            <Feather name="chevron-right" size={24} color={C.ink} />
+          </Pressable>
         )}
       </View>
       </View>
