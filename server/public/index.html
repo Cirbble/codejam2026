@@ -37,8 +37,19 @@
   .small { height: 46px; padding: 0 20px; font-size: 16px; }
   .btn:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
   [hidden] { display: none !important; }
-  .scope { width: 100%; max-width: 520px; aspect-ratio: 1; justify-self: end; border-radius: 50%; box-shadow: 0 4px 0 var(--line); }
-  .scope canvas { width: 100%; height: 100%; display: block; border-radius: 50%; }
+  /* the play screen, as on a phone: radar plus the one instruction */
+  .phone { width: 100%; max-width: 360px; justify-self: end; aspect-ratio: 9 / 16.4; background: var(--sky); border: 12px solid var(--ink); border-radius: 48px; box-shadow: 0 8px 0 #6f7f8b; padding: 16px 12px 12px; display: grid; grid-template-rows: auto 1fr auto; gap: 10px; overflow: hidden; }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 0 4px; }
+  .lives { display: flex; gap: 4px; } .lives i { width: 11px; height: 11px; border-radius: 50%; background: var(--ink); }
+  .clock { font-family: var(--mono); font-weight: 700; font-size: 15px; }
+  .lvl { margin-left: auto; font-weight: 700; font-size: 12px; border: 2px solid #e3bc1a; border-radius: 999px; padding: 3px 9px; display: flex; align-items: center; gap: 5px; }
+  .lvl::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #e3bc1a; }
+  .phone canvas { width: 100%; aspect-ratio: 1; align-self: center; display: block; border-radius: 50%; box-shadow: 0 3px 0 var(--line); }
+  .mcard { border-radius: 22px; padding: 14px; display: flex; align-items: center; gap: 12px; min-height: 118px; transition: background .3s; }
+  .mcard .arr { width: 64px; height: 78px; border: 3px solid currentColor; border-radius: 18px; display: grid; place-items: center; align-content: center; gap: 2px; flex: none; }
+  .mcard .arr svg { width: 32px; height: 32px; }
+  .mcard .arr b { font-family: var(--mono); font-size: 15px; }
+  .mcard .big { font-family: var(--display); font-weight: 800; font-size: 27px; letter-spacing: -.04em; line-height: 1.12; }
   .how { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
   .card { background: var(--surface); border-radius: 24px; padding: 24px; box-shadow: 0 2px 0 var(--line); display: grid; gap: 10px; align-content: start; }
   .card .ic { width: 46px; height: 46px; border-radius: 50%; background: var(--ink); display: grid; place-items: center; }
@@ -54,7 +65,7 @@
   @media (max-width: 820px) {
     main { gap: 48px; padding-block: 18px 40px; }
     .hero { grid-template-columns: minmax(0, 1fr); gap: 28px; }
-    .scope { justify-self: center; max-width: 440px; }
+    .phone { justify-self: center; max-width: 330px; }
     .how { grid-template-columns: minmax(0, 1fr); }
     .actions .btn { flex: 1 1 auto; }
   }
@@ -79,7 +90,14 @@
         <a class="btn outline" id="ios" href="#" hidden>iPhone</a>
       </div>
     </div>
-    <div class="scope"><canvas id="scope" role="img" aria-label="A radar scope: storm cells form around players and land while they walk out"></canvas></div>
+    <div class="phone" role="img" aria-label="The play screen: a storm cell on the radar and the instruction Walk 9 m south-west with a countdown">
+      <div class="bar"><span class="lives"><i></i><i></i><i></i></span><span class="clock" id="mclock">4:12</span><span class="lvl">Level 2</span></div>
+      <canvas id="scope"></canvas>
+      <div class="mcard" id="mcard">
+        <div class="arr" id="marr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" id="marrow"><path d="M12 19V5M5 12l7-7 7 7"/></svg><b id="msec">6 s</b></div>
+        <div><div class="big" id="ml1">Walk 9 m</div><div class="big" id="ml2">south-west</div></div>
+      </div>
+    </div>
   </section>
 
   <section class="how">
@@ -127,62 +145,83 @@
     if (c) location.href = `/watch/${c.toUpperCase()}?t=${t || ''}`;
   };
 
-  // A small simulated storm on the scope: cells form on players, heat up and land; players walk out.
+  // The play screen: a cell forms on you, heats up, you walk out along the arrow, it lands; repeat.
   const cv = document.getElementById('scope'), ctx = cv.getContext('2d');
   const DBZ = ['#2e9b57', '#e3bc1a', '#ee8a22', '#d7372b', '#b32a78'];
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const span = 100;
-  const players = [{ x: -18, y: 22, c: '#3e6f96' }, { x: 26, y: -8, c: '#6b5b95' }, { x: -34, y: -30, c: '#2f7d78' }, { x: 8, y: 40, c: '#8a6b3d' }].map((p) => ({ ...p, tx: p.x, ty: p.y }));
-  let cells = [], flashes = [], sweep = 0, last = performance.now(), nextCell = 0;
+  const span = 34, CYCLE = 8200, LIFE = 6400;
+  const crew = [{ x: -18, y: 14, c: '#3e6f96', n: 'Maya' }, { x: 17, y: -14, c: '#6b5b95', n: 'Leo' }];
+  const DIRS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+  const card = document.getElementById('mcard'), l1 = document.getElementById('ml1'), l2 = document.getElementById('ml2'), sec = document.getElementById('msec'), arr = document.getElementById('marr'), arrow = document.getElementById('marrow');
   function size() { const r = cv.getBoundingClientRect(), d = devicePixelRatio || 1; cv.width = r.width * d; cv.height = r.height * d; }
   addEventListener('resize', size); size();
-  function spawn(now) {
-    const p = players[Math.floor(Math.random() * players.length)], r = 12 + Math.random() * 9;
-    const cell = { x: p.x + (Math.random() - .5) * 8, y: p.y + (Math.random() - .5) * 8, r, born: now, life: 5600 + Math.random() * 1600 };
-    if (cells.some((o) => Math.hypot(o.x - cell.x, o.y - cell.y) < o.r + r)) return;
-    cells.push(cell);
-    for (const q of players) {
-      const dx = q.x - cell.x, dy = q.y - cell.y, d = Math.hypot(dx, dy) || 1;
-      if (d < r + 3) { const go = r + 6; q.tx = cell.x + dx / d * go; q.ty = cell.y + dy / d * go; const n = Math.hypot(q.tx, q.ty); if (n > 70) { q.tx *= 70 / n; q.ty *= 70 / n; } }
-    }
-  }
+  const t0 = performance.now();
   function frame(now) {
-    const dt = Math.min(100, now - last); last = now;
+    const t = still ? 2500 : (now - t0) % CYCLE;
     const W = cv.width, c = W / 2, R = c - 2, k = R / span, d = devicePixelRatio || 1;
-    if (now > nextCell) { spawn(now); nextCell = now + 1800; }
-    for (const p of players) { const dx = p.tx - p.x, dy = p.ty - p.y, n = Math.hypot(dx, dy); if (n > .1) { const s = Math.min(n, dt / 1000 * 2.4); p.x += dx / n * s; p.y += dy / n * s; } }
+    // world: the cell sits just north-east of where you started; you walk south-west out of it
+    const cell = { x: 3, y: 2.5, r: 12 };
+    const ux = -3 / Math.hypot(3, 2.5), uy = -2.5 / Math.hypot(3, 2.5);
+    const need = cell.r + 3 - Math.hypot(3, 2.5);
+    const walked = Math.min(need + 1, Math.max(0, (t - 1400) / 1000) * 2.4);
+    const me = { x: ux * walked, y: uy * walked };
+    const live = t < LIFE, k01 = Math.min(1, t / LIFE);
+    const left = Math.max(0, Math.ceil(need - walked));
+    const xy = (p) => [c + (p.x - me.x) * k, c - (p.y - me.y) * k];
     ctx.clearRect(0, 0, W, W);
     const g = ctx.createRadialGradient(c, c, 0, c, c, R); g.addColorStop(0, '#f6f8fa'); g.addColorStop(1, '#eef2f5');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.fill();
     ctx.save(); ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.clip();
-    ctx.strokeStyle = '#b3bfc9'; ctx.lineWidth = 1.2 * d;
-    for (const m of [25, 50, 75]) { ctx.beginPath(); ctx.arc(c, c, m * k, 0, Math.PI * 2); ctx.stroke(); }
-    ctx.globalAlpha = .6; ctx.beginPath(); ctx.moveTo(c, 0); ctx.lineTo(c, W); ctx.moveTo(0, c); ctx.lineTo(W, c); ctx.stroke(); ctx.globalAlpha = 1;
-    cells = cells.filter((s) => { if (now - s.born > s.life) { flashes.push({ x: s.x, y: s.y, r: s.r, at: now }); return false; } return true; });
-    for (const s of cells) {
-      const t = (now - s.born) / s.life, lit = 1 + Math.floor(t * 4.999);
-      for (let i = 0; i < lit; i++) { ctx.globalAlpha = i === 0 ? .55 : .8; ctx.fillStyle = DBZ[i]; ctx.beginPath(); ctx.arc(c + s.x * k, c - s.y * k, s.r * k * (1 - i / 5.6), 0, Math.PI * 2); ctx.fill(); }
-      ctx.globalAlpha = 1; ctx.strokeStyle = DBZ[lit - 1]; ctx.lineWidth = 2 * d; ctx.beginPath(); ctx.arc(c + s.x * k, c - s.y * k, s.r * k, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#93a2ae'; ctx.lineWidth = 1.6 * d;
+    for (const m of [10, 20, 30]) { ctx.beginPath(); ctx.arc(c, c, m * k, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.globalAlpha = .5; ctx.beginPath(); ctx.moveTo(c, 0); ctx.lineTo(c, W); ctx.moveTo(0, c); ctx.lineTo(W, c); ctx.stroke(); ctx.globalAlpha = 1;
+    const [cx, cy] = xy(cell);
+    if (live) {
+      const lit = 1 + Math.floor(k01 * 4.999);
+      for (let i = 0; i < lit; i++) { ctx.globalAlpha = i === 0 ? .55 : .8; ctx.fillStyle = DBZ[i]; ctx.beginPath(); ctx.arc(cx, cy, cell.r * k * (1 - i / 5.6), 0, Math.PI * 2); ctx.fill(); }
+      ctx.globalAlpha = 1; ctx.strokeStyle = DBZ[lit - 1]; ctx.lineWidth = 2 * d; ctx.beginPath(); ctx.arc(cx, cy, cell.r * k, 0, Math.PI * 2); ctx.stroke();
+      if (left > 0) { // the escape arrow
+        const ex = c + ux * (left + 6) * k, ey = c - uy * (left + 6) * k, a = Math.atan2(ey - c, ex - c);
+        ctx.lineCap = 'round'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 10 * d; ctx.beginPath(); ctx.moveTo(c + 22 * d * Math.cos(a), c + 22 * d * Math.sin(a)); ctx.lineTo(ex, ey); ctx.stroke();
+        ctx.strokeStyle = '#16212a'; ctx.lineWidth = 5 * d; ctx.stroke();
+        ctx.fillStyle = '#16212a'; ctx.beginPath(); ctx.moveTo(ex + 6 * d * Math.cos(a), ey + 6 * d * Math.sin(a)); ctx.lineTo(ex - 15 * d * Math.cos(a - .55), ey - 15 * d * Math.sin(a - .55)); ctx.lineTo(ex - 15 * d * Math.cos(a + .55), ey - 15 * d * Math.sin(a + .55)); ctx.closePath(); ctx.fill();
+      }
+    } else if (t < LIFE + 500) { ctx.globalAlpha = (1 - (t - LIFE) / 500) * .5; ctx.fillStyle = '#b32a78'; ctx.beginPath(); ctx.arc(cx, cy, cell.r * k * 1.1, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+    // a star to grab, and the crew
+    const [sx, sy] = xy({ x: -12, y: -20 });
+    ctx.fillStyle = '#16212a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 * d; ctx.beginPath();
+    for (let i = 0; i < 10; i++) { const a = (i * 36 - 90) * Math.PI / 180, rr = (i % 2 ? .45 : 1) * 9 * d; i ? ctx.lineTo(sx + rr * Math.cos(a), sy + rr * Math.sin(a)) : ctx.moveTo(sx + rr * Math.cos(a), sy + rr * Math.sin(a)); }
+    ctx.closePath(); ctx.stroke(); ctx.fill();
+    ctx.font = `700 ${12 * d}px Figtree, sans-serif`; ctx.textAlign = 'left';
+    for (const p of crew) {
+      const [x, y] = xy(p);
+      ctx.fillStyle = '#16212a'; ctx.beginPath(); ctx.arc(x, y, 9.5 * d, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = p.c; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5 * d; ctx.beginPath(); ctx.arc(x, y, 7.5 * d, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 5 * d; ctx.strokeStyle = '#fff'; ctx.lineJoin = 'round'; ctx.strokeText(p.n, x + 13 * d, y + 4 * d); ctx.fillStyle = '#16212a'; ctx.fillText(p.n, x + 13 * d, y + 4 * d);
     }
-    flashes = flashes.filter((f) => now - f.at < 600);
-    for (const f of flashes) { const a = 1 - (now - f.at) / 600; ctx.globalAlpha = a * .5; ctx.fillStyle = '#b32a78'; ctx.beginPath(); ctx.arc(c + f.x * k, c - f.y * k, f.r * k * (1 + (1 - a) * .35), 0, Math.PI * 2); ctx.fill(); }
-    ctx.globalAlpha = 1;
-    if (!still) sweep = (sweep + dt / 5000 * Math.PI * 2) % (Math.PI * 2);
-    for (let i = 0; i < 12; i++) {
-      ctx.globalAlpha = .028 * Math.pow(1 - i / 12, 1.5); ctx.fillStyle = '#16212a'; ctx.beginPath(); ctx.moveTo(c, c);
-      ctx.arc(c, c, R, sweep - (i + 1) * .052 - Math.PI / 2, sweep - i * .052 - Math.PI / 2); ctx.closePath(); ctx.fill();
-    }
-    ctx.globalAlpha = .22; ctx.strokeStyle = '#16212a'; ctx.lineWidth = 1.5 * d; ctx.beginPath(); ctx.moveTo(c, c); ctx.lineTo(c + R * Math.cos(sweep - Math.PI / 2), c + R * Math.sin(sweep - Math.PI / 2)); ctx.stroke();
-    ctx.globalAlpha = 1;
-    for (const p of players) { ctx.fillStyle = p.c; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5 * d; ctx.beginPath(); ctx.arc(c + p.x * k, c - p.y * k, 7 * d, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    // cell countdown tag only shows for cells you're not in; you
+    ctx.fillStyle = '#16212a'; ctx.globalAlpha = .1; ctx.beginPath(); ctx.arc(c, c, 20 * d, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(c, c, 12 * d, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#16212a'; ctx.beginPath(); ctx.arc(c, c, 9 * d, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
     for (let a = 0; a < 360; a += 10) {
-      const long = a % 90 === 0, r0 = R - (long ? 12 : 6) * d, rad = a * Math.PI / 180;
-      ctx.globalAlpha = a === 0 ? 1 : long ? .5 : .22; ctx.strokeStyle = '#16212a'; ctx.lineWidth = (a === 0 ? 3 : 1.5) * d;
+      const long = a % 90 === 0, r0 = R - (long ? 10 : 5) * d, rad = a * Math.PI / 180;
+      ctx.globalAlpha = a === 0 ? 1 : long ? .7 : .3; ctx.strokeStyle = '#16212a'; ctx.lineWidth = (a === 0 ? 3 : 1.8) * d;
       ctx.beginPath(); ctx.moveTo(c + r0 * Math.sin(rad), c - r0 * Math.cos(rad)); ctx.lineTo(c + R * Math.sin(rad), c - R * Math.cos(rad)); ctx.stroke();
     }
-    ctx.globalAlpha = .18; ctx.lineWidth = 1.5 * d; ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
-    ctx.fillStyle = '#16212a'; ctx.font = `700 ${14 * d}px Figtree, sans-serif`; ctx.textAlign = 'center'; ctx.fillText('N', c, 32 * d);
+    ctx.globalAlpha = 1; ctx.fillStyle = '#16212a'; ctx.font = `700 ${12 * d}px Figtree, sans-serif`; ctx.textAlign = 'center'; ctx.fillText('N', c, 24 * d);
+    // the instruction card follows the same moment
+    const inside = left > 0 && live;
+    if (inside) {
+      const col = DBZ[Math.min(4, Math.floor((0.2 + k01 * 0.8) * 5))];
+      card.style.background = col; card.style.color = col === DBZ[1] || col === DBZ[2] ? '#16212a' : '#fff';
+      arr.hidden = false; l1.textContent = `Walk ${left} m`; l2.textContent = DIRS[Math.round(((Math.atan2(ux, uy) * 180 / Math.PI + 360) % 360) / 45) % 8];
+      sec.textContent = `${Math.max(1, Math.ceil((LIFE - t) / 1000))} s`; arrow.style.transform = `rotate(${Math.atan2(ux, uy) * 180 / Math.PI}deg)`;
+    } else {
+      card.style.background = '#eef2f5'; card.style.color = '#16212a'; arr.hidden = true;
+      l1.textContent = live ? 'Clear' : 'Dodged'; l2.textContent = live ? '' : '+10 points';
+    }
+    document.getElementById('mclock').textContent = `4:${String(12 - Math.floor(t / 1000)).padStart(2, '0')}`;
     if (!still) requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

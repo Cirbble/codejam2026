@@ -26,6 +26,7 @@ export type Player = PlayerView & {
   warnedAt: Record<string, number>; // strike id -> when this player was warned
   warnedNeed: Record<string, number>; // strike id -> ms they needed to escape from where they were
   lastOobWarn: number;
+  oobSince: number | null;
   joinedAt: number;
   disconnectedAt: number | null;
   anchor: LatLng | null; // distance accumulates against this, not against every jittery fix
@@ -79,6 +80,11 @@ export class Room {
   nextMegaAt = 0;
   lastActivity = Date.now();
   finishedAt: number | null = null;
+  hostPaused = false;
+  /** after a restore: hold the clock until everyone is back, or this time passes */
+  graceUntil = 0;
+  paused: RoomView['paused'] = null;
+  savedAt = 0;
 
   private lastTick = Date.now();
 
@@ -115,11 +121,13 @@ export class Room {
       dodges: 0,
       orbs: 0,
       revives: 0,
+      inactive: false,
       lastFixAt: 0,
       warned: new Set(),
       warnedAt: {},
       warnedNeed: {},
       lastOobWarn: 0,
+      oobSince: null,
       joinedAt: Date.now(),
       disconnectedAt: null,
       anchor: null,
@@ -155,7 +163,7 @@ export class Room {
 
   setBots(n: number) {
     const bots = [...this.players.values()].filter((p) => p.bot);
-    n = clamp(Math.round(n), 0, 5);
+    n = this.settings.quick ? clamp(Math.round(n), 0, 5) : 0; // bots only in practice (demo) rooms
     while (bots.length > n) this.players.delete(bots.pop()!.id);
     for (let i = bots.length; i < n; i++) {
       const b = this.addPlayer(BOT_NAMES[i % BOT_NAMES.length], true);
@@ -211,7 +219,7 @@ export class Room {
         p.anchorAt = fixAt;
       }
       const d = distanceM(p.anchor, here);
-      if (d >= Math.max(4, acc * 0.6)) {
+      if (d >= Math.max(5, acc) && fixAt - p.anchorAt >= 2500) {
         const secs = Math.max(1, (fixAt - p.anchorAt) / 1000);
         if (d / secs <= 3.5 && d < 500) {
           p.distanceM += d;
@@ -240,9 +248,57 @@ export class Room {
     }
   }
 
+  /** The phone confirmed it got (and spoke) a warning: the walk-out allowance counts from now. */
+  ack(id: string, strikeId: string) {
+    const p = this.players.get(id);
+    if (!p || !p.warned.has(strikeId) || p.warnedAt[strikeId] != null) return;
+    p.warnedAt[strikeId] = Date.now();
+  }
+
+  /** App backgrounded or phone locked: no hits, no points, not standing, until it comes back. */
+  setActive(id: string, on: boolean) {
+    const p = this.players.get(id);
+    if (!p || p.bot) return;
+    p.inactive = !on;
+    if (!on) {
+      p.warned.clear();
+      p.warnedAt = {};
+      p.warnedNeed = {};
+    }
+  }
+
+  setPaused(on: boolean) {
+    if (this.phase !== 'playing' && this.phase !== 'countdown') return;
+    this.hostPaused = on;
+    this.log(on ? 'Paused by the host' : 'Storm back on', on ? 'pause' : 'resume');
+  }
+
+  /** Stop the clock for `ms`: every deadline moves by the same amount, so nothing lands early. */
+  private shift(ms: number) {
+    if (ms <= 0) return;
+    if (this.startsAt) this.startsAt += ms;
+    if (this.endsAt) this.endsAt += ms;
+    this.nextStrikeAt += ms;
+    this.nextMegaAt += ms;
+    for (const s of this.strikes) {
+      s.warnAt += ms;
+      s.hitAt += ms;
+    }
+    for (const o of this.orbs) o.expiresAt += ms;
+    for (const p of this.players.values()) for (const k of Object.keys(p.warnedAt)) p.warnedAt[k] += ms;
+  }
+
+  /** Counts as standing (for the win and the results): up, here, inside the zone (20 s grace) and on a usable fix. */
+  private standing(p: Player, now: number) {
+    if (p.status !== 'alive') return false;
+    if (p.bot) return true;
+    const oobLong = p.oob && p.oobSince != null && now - p.oobSince > 20_000;
+    return p.connected && !p.inactive && !oobLong && now - p.lastFixAt < 30_000 && p.acc <= WEAK_ACC_M;
+  }
+
   /** A fix we trust enough to penalise. */
   private trusted(p: Player, now: number) {
-    return p.bot || (p.connected && now - p.lastFixAt < STALE_FIX_MS && p.acc <= WEAK_ACC_M && now - p.jumpAt > 5000);
+    return p.bot || (p.connected && !p.inactive && now - p.lastFixAt < STALE_FIX_MS && p.acc <= WEAK_ACC_M && now - p.jumpAt > 5000);
   }
 
   // ---------- lifecycle ----------
@@ -251,6 +307,7 @@ export class Room {
     if (typeof s.durationSec === 'number' && Number.isFinite(s.durationSec)) this.settings.durationSec = clamp(Math.round(s.durationSec), 60, 1800);
     if (typeof s.radiusM === 'number' && Number.isFinite(s.radiusM)) this.settings.radiusM = clamp(Math.round(s.radiusM), 40, 300);
     if (typeof s.quick === 'boolean') this.settings.quick = s.quick;
+    if (!this.settings.quick) this.setBots(0);
   }
 
   /** Storm level for the share `t` (0..1) of the game that has passed. */
@@ -320,6 +377,18 @@ export class Room {
     const now = Date.now();
     const dt = Math.min(1000, now - this.lastTick);
     this.lastTick = now;
+    // pauses: host, everyone away (all phones locked or offline), or right after a redeploy
+    if (this.phase === 'playing' || this.phase === 'countdown') {
+      const humans = this.humans();
+      const away = humans.length > 0 && humans.every((p) => !p.connected || p.inactive);
+      const regrouping = now < this.graceUntil && humans.some((p) => !p.connected);
+      this.paused = this.hostPaused ? 'host' : regrouping ? 'reconnect' : away ? 'away' : null;
+      if (this.paused) {
+        this.shift(dt);
+        this.tickHost(now);
+        return;
+      }
+    } else this.paused = null;
     if (this.phase === 'countdown' && this.startsAt && now >= this.startsAt) this.phase = 'playing';
     if (this.phase !== 'playing' || !this.center) {
       this.tickHost(now);
@@ -348,7 +417,7 @@ export class Room {
     // Active roster: bots, connected humans, and humans gone for under 4 minutes
     const active = [...this.players.values()].filter((p) => p.bot || p.connected || now - (p.disconnectedAt ?? now) < 240_000);
     const everyoneDown = active.length > 0 && active.every((p) => p.status === 'downed');
-    const anyoneUp = active.some((p) => !p.bot && p.status === 'alive' && p.connected && now - p.lastFixAt < 30_000 && p.acc <= WEAK_ACC_M);
+    const anyoneUp = active.some((p) => !p.bot && this.standing(p, now));
     if (everyoneDown && this.humans().length > 0) this.finish(now, 'lost');
     else if (this.endsAt && now >= this.endsAt) this.finish(now, anyoneUp ? 'won' : 'lost');
   }
@@ -424,7 +493,7 @@ export class Room {
       const { dir, m, d } = this.escapeFor(p, s);
       if (d < s.r + 3 && !p.warned.has(s.id)) {
         p.warned.add(s.id);
-        p.warnedAt[s.id] = now;
+        if (p.bot) p.warnedAt[s.id] = now; // phones confirm with an ack
         p.warnedNeed[s.id] = walkMs(m, s.kind === 'mega'); // same walking pace + reaction time as the strike's own warning
         this.emit(p.id, { kind: 'warn', strikeId: s.id, inSec: Math.max(1, Math.round((s.hitAt - now) / 1000)), moveDir: dir, moveM: m, mega: s.kind === 'mega' });
       }
@@ -447,12 +516,12 @@ export class Room {
         // and only if they were warned early enough to walk out (covers reconnecting inside a zone).
         const warnedFor = p.warnedAt[s.id] != null ? now - p.warnedAt[s.id] : 0;
         const need = Math.max(2500, p.warnedNeed[s.id] ?? Infinity);
-        if (trusted && warnedFor >= need && d + p.acc * 0.5 <= s.r) {
+        if (trusted && warnedFor >= need && d + Math.min(p.acc * 0.5, s.r * 0.4) <= s.r) {
           p.hp -= s.kind === 'mega' ? 2 : 1;
           p.hits++;
           if (p.hp <= 0) this.down(p);
           else this.emit(p.id, { kind: 'hit', hp: p.hp });
-        } else if (trusted && p.warned.has(s.id) && d > s.r) {
+        } else if (trusted && p.warnedAt[s.id] != null && d > s.r) {
           p.dodges++;
           p.score += s.kind === 'mega' ? 25 : 10;
           this.emit(p.id, { kind: 'dodge', points: s.kind === 'mega' ? 25 : 10 });
@@ -488,8 +557,8 @@ export class Room {
       const rr = Math.sqrt(Math.random()) * R;
       const pos = offsetM(this.center!, Math.cos(a) * rr, Math.sin(a) * rr);
       if (this.alive().some((p) => distanceM({ lat: p.lat!, lng: p.lng! }, pos) < 15)) continue;
-      const kit = Math.random() < 0.12; // mostly probes; kits are a rare heal
-      this.orbs.push({ id: rid(6), lat: pos.lat, lng: pos.lng, kind: kit ? 'kit' : 'probe', expiresAt: now + rand(60_000, 90_000) });
+      const heart = Math.random() < 0.12; // mostly stars (points); hearts are a rare extra life
+      this.orbs.push({ id: rid(6), lat: pos.lat, lng: pos.lng, kind: heart ? 'heart' : 'star', expiresAt: now + rand(60_000, 90_000) });
     }
     for (const p of this.alive()) {
       if (!this.trusted(p, now)) continue;
@@ -498,7 +567,7 @@ export class Room {
           this.orbs = this.orbs.filter((x) => x.id !== o.id);
           p.orbs++;
           let pts = 25;
-          if (o.kind === 'kit') {
+          if (o.kind === 'heart') {
             if (p.hp < p.maxHp) {
               p.hp++;
               pts = 5;
@@ -540,6 +609,7 @@ export class Room {
       if (p.lat == null || !this.center) continue;
       const d = distanceM(this.center, { lat: p.lat, lng: p.lng! });
       p.oob = d > this.settings.radiusM + 10;
+      p.oobSince = p.oob ? (p.oobSince ?? now) : null;
       if (p.oob && now - p.lastOobWarn > 15000) {
         p.lastOobWarn = now;
         this.emit(p.id, { kind: 'oob', dir: compass(bearingDeg({ lat: p.lat, lng: p.lng! }, this.center)), m: Math.round(d - this.settings.radiusM) });
@@ -560,7 +630,7 @@ export class Room {
 
   computeResults(now: number) {
     const ps = [...this.players.values()];
-    const ranking = ps.map((p) => ({ id: p.id, name: p.name, color: p.color, score: Math.round(p.score), survived: p.status === 'alive' })).sort((a, b) => b.score - a.score);
+    const ranking = ps.map((p) => ({ id: p.id, name: p.name, color: p.color, score: Math.round(p.score), survived: p.bot ? p.status === 'alive' : this.standing(p, now), bot: p.bot })).sort((a, b) => b.score - a.score);
     const humans = ps.filter((p) => !p.bot);
     const base = humans.length ? humans : ps;
     const sum = (f: (p: Player) => number) => base.reduce((s, p) => s + f(p), 0);
@@ -584,6 +654,7 @@ export class Room {
         durationSec: Math.round(((this.finishedAt ?? now) - (this.startsAt ?? now)) / 1000),
         peakLevel: this.peakLevel,
         simulated: humans.some((p) => p.sim),
+        practice: ps.some((p) => p.bot) || humans.some((p) => p.sim),
       },
       awards,
     };
@@ -648,6 +719,7 @@ export class Room {
     void lastTick;
     return {
       ...rest,
+      savedAt: Date.now(),
       players: [...this.players.values()].map((p) => ({ ...p, warned: [...p.warned] })),
     };
   }
@@ -658,12 +730,17 @@ export class Room {
     // older snapshots carried photo-game fields: keep only what this game knows
     for (const k of ['prompt', 'nextPromptAt', 'rage', 'boss', 'photos', 'usedPrompts', 'rounds', 'round', 'judging', 'huntMs', 'retryGiven', 'wipeAt']) delete rest[k];
     Object.assign(r, rest);
+    r.hostPaused = !!rest.hostPaused;
     r.settings = { durationSec: rest.settings?.durationSec ?? 480, radiusM: rest.settings?.radiusM ?? 120, quick: !!rest.settings?.quick };
     const t = Date.now();
+    if (r.phase === 'playing' || r.phase === 'countdown') {
+      r.shift(Math.max(0, t - (o.savedAt || t))); // the downtime never counts against anyone
+      r.graceUntil = t + 20_000;
+    }
     r.players = new Map(
       (players as any[]).map(({ photos, pocketMs, pocketOn, dropped, ...p }) => {
         void [photos, pocketMs, pocketOn, dropped];
-        return [p.id, { ...p, warned: new Set(), warnedAt: {}, warnedNeed: {}, connected: !!p.bot, disconnectedAt: p.bot ? null : t }];
+        return [p.id, { oobSince: null, ...p, inactive: false, warned: new Set(), warnedAt: {}, warnedNeed: {}, connected: !!p.bot, disconnectedAt: p.bot ? null : t }];
       }),
     );
     return r;
@@ -695,7 +772,8 @@ export class Room {
       endsAt: this.endsAt,
       now: Date.now(),
       level: this.level,
-      players: [...this.players.values()].map(({ secret, warned, warnedAt, warnedNeed, lastFixAt, lastOobWarn, joinedAt, heading, speed, reactMs, disconnectedAt, anchor, jumpStreak, jumpAt, anchorAt, ...v }) => ({
+      paused: this.paused,
+      players: [...this.players.values()].map(({ secret, warned, warnedAt, warnedNeed, lastFixAt, lastOobWarn, oobSince, joinedAt, heading, speed, reactMs, disconnectedAt, anchor, jumpStreak, jumpAt, anchorAt, ...v }) => ({
         ...v,
         score: Math.round(v.score),
         distanceM: Math.round(v.distanceM),

@@ -118,7 +118,7 @@ export function Segmented<V extends string | number>({ value, options, onChange,
             }}
             style={[s.segItem, on && s.segOn, disabled && !on && { opacity: 0.6 }]}
           >
-            <Text style={{ fontFamily: F.bodyBold, fontSize: 15, color: on ? C.white : C.inkSoft }}>{o.label}</Text>
+            <Text style={{ fontFamily: F.bodyBold, fontSize: 17, color: on ? C.white : C.ink }}>{o.label}</Text>
           </Pressable>
         );
       })}
@@ -170,6 +170,6 @@ const s = StyleSheet.create({
   icon: { width: 46, height: 46, borderRadius: 23, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center', boxShadow: `0px 2px 0px ${C.line}` },
   panel: { backgroundColor: C.surface, borderRadius: R.lg, padding: 18, boxShadow: `0px 2px 0px ${C.line}` },
   seg: { flexDirection: 'row', backgroundColor: C.skyDeep, borderRadius: R.pill, padding: 4 },
-  segItem: { flex: 1, height: 42, borderRadius: R.pill, alignItems: 'center', justifyContent: 'center' },
+  segItem: { flex: 1, height: 46, borderRadius: R.pill, alignItems: 'center', justifyContent: 'center' },
   segOn: { backgroundColor: C.ink },
 });

@@ -19,6 +19,16 @@ Four rules:
 3. You can only be hit by a cell you were warned about in time to walk out of it, so reconnecting inside a cell can't cost a life.
 4. Every warned cell you escape counts as a dodge.
 
+**What if a warning arrives late, or the phone is locked?**
+- Each warning's walk-out time starts when the phone confirms it received it (an ack), not when the server sent it. If the phone never confirms in time, that cell can't hit you.
+- A locked or backgrounded phone can't be hit, scores nothing and doesn't count as standing. If every phone is away, the storm clock stops.
+- The host can pause at any time without penalty. After a server redeploy, the downtime is added back to every deadline, and the clock waits up to 20 s for the crew to reconnect.
+
+**Can I win by standing outside the zone, or with bad GPS?**
+- No. Outside the zone you earn nothing, and after a 20 s grace period you stop counting as standing.
+- For a hit, the GPS error margin is capped at 40% of the cell radius, so even a 30 m fix can be hit in the middle of a cell.
+- On a fix worse than 30 m you can't be hit, but you also score nothing until it settles.
+
 **What if I walk into a cell late?**
 You get the same walk-out allowance as if you had been warned at that moment. Cutting through a cell is safe but scores nothing. We chose this so nobody feels pushed to run.
 

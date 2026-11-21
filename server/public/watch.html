@@ -37,8 +37,7 @@
   .p .n small { font-weight: 500; color: var(--faint); font-size: .7em; }
   .p .lives { display: flex; gap: 6px; } .p .lives i { width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid var(--line); }
   .p .s { font-family: var(--display); font-weight: 700; font-size: .85em; min-width: 3ch; text-align: right; }
-  .log { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: .6vw; font-size: clamp(15px, 1.15vw, 22px); color: var(--ink-soft); font-weight: 500; padding: 0 .4vw; }
-  .log b { color: var(--ink); font-weight: 700; }
+  .now { font-family: var(--display); font-weight: 700; font-size: clamp(22px, 2vw, 40px); letter-spacing: -.03em; line-height: 1.2; padding: 0 .4vw; min-height: 2.4em; }
   .overlay { position: absolute; inset: 0; display: none; place-items: center; }
   .overlay .card { text-align: center; display: grid; gap: 1.2vw; padding: 3vw 4vw; border-radius: 40px; background: var(--surface); box-shadow: 0 6px 0 var(--line); max-width: 92%; }
   .overlay .card.ink { background: var(--ink); color: #fff; box-shadow: 0 6px 0 #6f7f8b; }
@@ -67,7 +66,7 @@
       <div class="box"><div class="k" id="clockl">Storm ends</div><div class="v" id="clock">0:00</div></div>
     </div>
     <div class="box"><div class="crew" id="crew"></div></div>
-    <div class="log" id="log"></div>
+    <div class="now" id="log"></div>
   </div>
 </div>
 <div id="join"><form id="jf"><input id="ji" placeholder="CODE-token" autocomplete="off" aria-label="Room code and token" /><button>Watch</button></form></div>
@@ -77,7 +76,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const DBZ = ['#2e9b57', '#e3bc1a', '#ee8a22', '#d7372b', '#b32a78'];
 const dbz = (t) => DBZ[Math.max(0, Math.min(4, Math.floor(t * 5)))];
-$('iso').innerHTML = [0.1, 0.24, 0.4, 0.57, 0.74, 0.9].map((f, i) => { const y = f * 1000, a = (i % 2 ? 1 : -1) * 45; return `<path d="M-20,${y} C250,${y + a} 550,${y - a * 1.6} 1020,${y + a * 0.6}" stroke="rgba(22,33,42,.09)" stroke-width="1.5" fill="none" vector-effect="non-scaling-stroke"/>`; }).join('');
+$('iso').innerHTML = [0.1, 0.24, 0.4, 0.57, 0.74, 0.9].map((f, i) => { const y = f * 1000, a = (i % 2 ? 1 : -1) * 45; return `<path d="M-20,${y} C250,${y + a} 550,${y - a * 1.6} 1020,${y + a * 0.6}" stroke="rgba(22,33,42,.05)" stroke-width="1.5" fill="none" vector-effect="non-scaling-stroke"/>`; }).join('');
 const parts = location.pathname.split('/').filter(Boolean);
 let code = (parts[1] || '').toUpperCase();
 let token = new URLSearchParams(location.search).get('t') || '';
@@ -125,14 +124,16 @@ function render() {
       <span class="s">${p.score}</span></div>`).join('') || '<div class="k">Nobody yet</div>';
   }
   const lk = r.feed.map((f) => f.id).join();
-  if (lk !== logKey) { logKey = lk; $('log').innerHTML = r.feed.slice(0, 8).map((f) => `<div><b>${esc(f.text)}</b></div>`).join(''); }
+  if (lk !== logKey) { logKey = lk; $('log').textContent = r.feed[0]?.text ?? ''; }
   let ov = '', cls = '';
   if (r.phase === 'lobby') ov = `<div class="sub">Crew code</div><h2>${esc(r.code)}</h2><div class="sub">${plural(r.players.length, 'player')} · waiting for the host</div>`;
+  else if (r.paused && r.phase === 'playing') ov = `<h2>Paused</h2><div class="sub">${r.paused === 'host' ? 'The host stopped the storm' : r.paused === 'away' ? 'Every phone is away' : 'Waiting for the crew to reconnect'}</div>`;
   else if (r.phase === 'countdown') ov = `<div class="sub">Storm incoming</div><h2>${Math.max(0, Math.ceil((r.startsAt - now()) / 1000))}</h2>`;
   else if (r.phase === 'ended' && r.results) {
     const t = r.results.team, won = r.outcome === 'won';
     cls = 'ink';
-    ov = `<h2>${won ? 'Outlasted' : 'The storm won'}</h2><div class="sub">${plural(t.dodges, 'dodge')} · ${plural(t.revives, 'revive')} · level ${t.peakLevel} · ${fmt(t.durationSec * 1000)}${t.simulated ? ' · demo' : ''}</div>`;
+    const people = r.results.ranking.filter((p) => !p.bot), up = people.filter((p) => p.survived).length;
+    ov = `<h2>${won ? 'Outlasted' : 'The storm won'}</h2><div class="sub">${up} of ${people.length} standing</div><div class="sub">${plural(t.dodges, 'dodge')} · ${plural(t.revives, 'revive')} · level ${t.peakLevel} · ${fmt(t.durationSec * 1000)}${t.practice ? ' · practice' : ''}</div>`;
   }
   if (ov + cls !== ovKey) { ovKey = ov + cls; $('ovc').innerHTML = ov; $('ovc').className = 'card ' + cls; $('ov').style.display = ov ? 'grid' : 'none'; }
 }
@@ -152,7 +153,7 @@ function frame(t) {
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.fill();
   ctx.save(); ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.clip();
   const step = span > 140 ? 50 : 25;
-  ctx.strokeStyle = '#b3bfc9'; ctx.lineWidth = 1.5 * d;
+  ctx.strokeStyle = '#93a2ae'; ctx.lineWidth = 2 * d;
   for (let m = step; m < span; m += step) { ctx.beginPath(); ctx.arc(c, c, m * k, 0, Math.PI * 2); ctx.stroke(); }
   ctx.globalAlpha = .6; ctx.beginPath(); ctx.moveTo(c, 0); ctx.lineTo(c, W); ctx.moveTo(0, c); ctx.lineTo(W, c); ctx.stroke(); ctx.globalAlpha = 1;
   if (r && origin) {
@@ -166,9 +167,11 @@ function frame(t) {
     }
     for (const o of r.orbs) {
       const [x, y] = xy(o.lat, o.lng), q = 9 * d;
-      ctx.fillStyle = '#eef2f5'; ctx.strokeStyle = '#16212a'; ctx.lineWidth = 2.5 * d;
-      if (o.kind === 'kit') { ctx.beginPath(); ctx.arc(x, y, 11 * d, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#16212a'; ctx.fillRect(x - 1.8 * d, y - 6 * d, 3.6 * d, 12 * d); ctx.fillRect(x - 6 * d, y - 1.8 * d, 12 * d, 3.6 * d); }
-      else { ctx.beginPath(); ctx.moveTo(x, y - q); ctx.lineTo(x + q, y); ctx.lineTo(x, y + q); ctx.lineTo(x - q, y); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+      ctx.fillStyle = '#16212a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5 * d; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      if (o.kind === 'heart') { const k2 = 11 * d; ctx.moveTo(x, y + k2 * .9); ctx.bezierCurveTo(x - k2 * 1.4, y - k2 * .1, x - k2 * .7, y - k2 * 1.2, x, y - k2 * .4); ctx.bezierCurveTo(x + k2 * .7, y - k2 * 1.2, x + k2 * 1.4, y - k2 * .1, x, y + k2 * .9); }
+      else for (let i = 0; i < 10; i++) { const a = (i * 36 - 90) * Math.PI / 180, rr = (i % 2 ? .45 : 1) * 13 * d; i ? ctx.lineTo(x + rr * Math.cos(a), y + rr * Math.sin(a)) : ctx.moveTo(x + rr * Math.cos(a), y + rr * Math.sin(a)); }
+      ctx.closePath(); ctx.stroke(); ctx.fill(); void q;
     }
   }
   sweep = (sweep + dt / 5000 * Math.PI * 2) % (Math.PI * 2);
@@ -183,21 +186,31 @@ function frame(t) {
       ctx.fillStyle = '#fff'; ctx.font = `700 ${17 * d}px 'JetBrains Mono', monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(sec), x, ty + d);
     }
     ctx.textBaseline = 'alphabetic';
-    ctx.font = `700 ${20 * d}px Figtree, sans-serif`; ctx.textAlign = 'left';
+    ctx.font = `700 ${24 * d}px Figtree, sans-serif`; ctx.textAlign = 'left';
+    // names: right of the dot, else left, else below; never on top of another name or dot
+    const dots = r.players.filter((p) => p.lat != null).map((p) => xy(p.lat, p.lng));
+    const boxes = dots.map(([x, y]) => ({ x0: x - 15 * d, x1: x + 15 * d, y0: y - 15 * d, y1: y + 15 * d }));
+    const free = (b) => !boxes.some((o) => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0);
     for (const p of r.players) {
       if (p.lat == null) continue;
       const [x, y] = xy(p.lat, p.lng), down = p.status === 'downed';
       if (down) { ctx.strokeStyle = '#16212a'; ctx.setLineDash([3 * d, 6 * d]); ctx.lineWidth = 2 * d; ctx.beginPath(); ctx.arc(x, y, 12 * k, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
-      ctx.fillStyle = down ? '#eef2f5' : p.color; ctx.strokeStyle = down ? '#16212a' : '#fff'; ctx.lineWidth = 3.5 * d;
-      ctx.beginPath(); ctx.arc(x, y, 10 * d, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.lineWidth = 6 * d; ctx.strokeStyle = '#eef2f5'; ctx.lineJoin = 'round'; ctx.strokeText(p.name, x + 17 * d, y + 7 * d);
-      ctx.fillStyle = '#16212a'; ctx.fillText(p.name, x + 17 * d, y + 7 * d);
+      ctx.fillStyle = '#16212a'; ctx.beginPath(); ctx.arc(x, y, 14 * d, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = down ? '#fff' : p.color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3 * d;
+      ctx.beginPath(); ctx.arc(x, y, 11 * d, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      if (down) { ctx.fillStyle = '#16212a'; ctx.fillRect(x - 2.2 * d, y - 7 * d, 4.4 * d, 14 * d); ctx.fillRect(x - 7 * d, y - 2.2 * d, 14 * d, 4.4 * d); }
+      const tw = ctx.measureText(p.name).width, th = 24 * d;
+      const spots = [[x + 20 * d, y + 8 * d], [x - 20 * d - tw, y + 8 * d], [x - tw / 2, y + 40 * d], [x - tw / 2, y - 22 * d]];
+      const at = spots.find(([sx, sy]) => free({ x0: sx, x1: sx + tw, y0: sy - th, y1: sy + 4 * d })) ?? spots[0];
+      boxes.push({ x0: at[0], x1: at[0] + tw, y0: at[1] - th, y1: at[1] + 4 * d });
+      ctx.lineWidth = 7 * d; ctx.strokeStyle = '#fff'; ctx.lineJoin = 'round'; ctx.strokeText(p.name, at[0], at[1]);
+      ctx.fillStyle = '#16212a'; ctx.fillText(p.name, at[0], at[1]);
     }
   }
   ctx.restore();
   for (let a = 0; a < 360; a += 10) {
     const long = a % 90 === 0, r0 = R - (long ? 16 : 8) * d, rad = a * Math.PI / 180;
-    ctx.globalAlpha = a === 0 ? 1 : long ? .5 : .22; ctx.strokeStyle = '#16212a'; ctx.lineWidth = (a === 0 ? 4 : 2) * d;
+    ctx.globalAlpha = a === 0 ? 1 : long ? .7 : .3; ctx.strokeStyle = '#16212a'; ctx.lineWidth = (a === 0 ? 4.5 : 2.5) * d;
     ctx.beginPath(); ctx.moveTo(c + r0 * Math.sin(rad), c - r0 * Math.cos(rad)); ctx.lineTo(c + R * Math.sin(rad), c - R * Math.cos(rad)); ctx.stroke();
   }
   ctx.globalAlpha = .18; ctx.lineWidth = 2 * d; ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;

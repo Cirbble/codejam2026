@@ -1,0 +1,21 @@
+**8/10 overall for a 24-hour entry: code 7.5/10, product 8.5/10.** Strong core loop, clear teamwork mechanic, and thoughtful demo support. **Touch Grass** is the stronger track.
+
+Verified: **17/17 server tests pass; server and app typechecks pass.** Lint is unconfigured. No files modified; native devices and live Railway recovery were not exercised.
+
+Prioritized findings:
+
+1. **P1 — Slow networks invalidate the walking allowance.** [game.ts:427](/C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:427), [game.ts:448](/C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:448): warning time starts when the server sends it, without confirming delivery. A delayed warning can leave insufficient walking time while still allowing damage. **Fix:** acknowledge warnings and calculate damage eligibility from receipt; treat unacknowledged players as unavailable.
+
+2. **P1 — Locking the phone can silently lose the game.** [LocationProvider.tsx:107](/C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/net/LocationProvider.tsx:107), [game.ts:351](/C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:351): location tracking is foreground-only, but the storm clock continues. Reproduced a loss with three lives remaining after fixes stopped. **Fix:** explicitly suspend participation on backgrounding and pause when nobody remains active, or implement supported background operation.
+
+3. **P1 — Walking outside the zone guarantees an easy survival strategy.** [game.ts:399](/C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:399), [game.ts:351](/C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:351): cells remain constrained to the arena, while out-of-bounds players still qualify for victory. Reproduced a win outside with zero hits. **Fix:** require trusted, in-bounds presence for victory, with a forgiving return grace period.
+
+4. **P1 — “Escapable” does not establish a physically safe route.** [geo.ts:64](/C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/geo.ts:64), [game.ts:489](/C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:489): exits and pickups respect geometric bounds, without accounting for roads, fences or water. **Fix:** constrain play to a host-confirmed clear area and provide an immediate, penalty-free pause for unsafe directions.
+
+5. **P2 — Body-relative directions trust unreliable phone orientation.** [Game.tsx:23](/C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/screens/Game.tsx:23), [coach.ts:32](/C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/game/coach.ts:32): heading accuracy is ignored, and phone heading is treated as the player’s facing direction. A sideways pocketed phone can reverse useful instructions. **Fix:** gate relative directions on fresh, calibrated heading and an explicit holding orientation; otherwise use compass directions.
+
+6. **P2 — Acceptable GPS can make normal cells harmless.** [game.ts:245](/C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:245), [game.ts:450](/C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:450): a 30 m accuracy fix is trusted, but its 15 m damage margin exceeds normal cell radii. Reproduced no damage at a 12 m cell’s centre while `gpsWeak=false`. **Fix:** align readiness with playable accuracy; offer Demo when insufficient, preserving conservative damage rules.
+
+7. **P2 — Redeploy recovery can immediately declare defeat.** [game.ts:666](/C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:666): restore disconnects every human but retains absolute deadlines. If downtime passes `endsAt`, the first tick loses before reconnection. **Fix:** restore into a reconnect grace phase and shift remaining deadlines by downtime.
+
+8. **P2 — Health evidence is overstated.** [game.ts:214](/C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:214), [Results.tsx:21](/C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/screens/Results.tsx:21): stationary ±4 m GPS jitter every three seconds produced **152 m walked**, and the report omits walking distance entirely. **Fix:** filter movement over longer windows, corroborate with motion where available, and display clearly approximate distance.

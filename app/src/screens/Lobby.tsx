@@ -10,7 +10,7 @@ import { useLoc } from '../net/LocationProvider';
 import { C, F, R } from '../theme';
 
 function Head({ children }: { children: React.ReactNode }) {
-  return <Text style={{ fontFamily: F.bodyBold, fontSize: 15, color: C.inkSoft }}>{children}</Text>;
+  return <Text style={{ fontFamily: F.bodyBold, fontSize: 17, color: C.ink }}>{children}</Text>;
 }
 
 export function Lobby() {
@@ -90,7 +90,7 @@ export function Lobby() {
                   {p.id === me?.id ? <T style={{ color: C.faint }}> (you)</T> : null}
                   {p.id === room.hostId && p.id !== me?.id ? <T style={{ color: C.faint }}> (host)</T> : null}
                 </T>
-                <T style={{ color: p.gpsWeak && !p.bot && !p.sim && p.lat != null ? C.dbz[3] : C.faint, fontFamily: F.bodyMid, fontSize: 15 }}>{st}</T>
+                <T style={{ color: p.gpsWeak && !p.bot && !p.sim && p.lat != null ? C.dbz[3] : C.inkSoft, fontFamily: F.bodyBold, fontSize: 16 }}>{st}</T>
                 {host && !p.bot && p.id !== room.hostId && (
                   <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${p.name}`} hitSlop={8} onPress={() => send({ t: 'kick', id: p.id })}>
                     <Feather name="x" size={18} color={C.faint} />
@@ -137,7 +137,7 @@ export function Lobby() {
             disabled={!host}
           />
         </View>
-        {host && (
+        {host && s.quick && (
           <View style={styles.rowBetween}>
             <Head>Practice bots</Head>
             <View style={styles.stepper}>
@@ -152,11 +152,6 @@ export function Lobby() {
           </View>
         )}
         <Button title="Big screen" icon="monitor" kind="outline" onPress={() => (Platform.OS === 'web' ? Linking.openURL(watchUrl) : Share.share({ message: watchUrl, url: watchUrl }))} />
-        {host && (
-          <Pressable accessibilityRole="button" onPress={() => send({ t: 'rotateWatch' })} hitSlop={10} style={{ alignSelf: 'center' }}>
-            <Text style={{ fontFamily: F.bodyMid, fontSize: 15, color: C.faint, textDecorationLine: 'underline' }}>New big-screen link</Text>
-          </Pressable>
-        )}
       </ScrollView>
 
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>

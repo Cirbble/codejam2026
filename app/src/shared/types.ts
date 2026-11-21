@@ -25,6 +25,8 @@ export type PlayerView = {
   dodges: number;
   orbs: number;
   revives: number;
+  /** app in the background / phone locked: can't be hit, doesn't count as standing */
+  inactive: boolean;
 };
 
 /** A storm cell: it lands at `hitAt` and strikes everything inside radius `r` (metres). */
@@ -39,12 +41,12 @@ export type StrikeView = {
 };
 
 /** Field pickups: a probe is points, a kit restores one life. */
-export type OrbView = { id: string; lat: number; lng: number; kind: 'probe' | 'kit'; expiresAt: number };
+export type OrbView = { id: string; lat: number; lng: number; kind: 'star' | 'heart'; expiresAt: number };
 
 export type FeedItem = { id: string; at: number; text: string; kind: string };
 
 export type Results = {
-  ranking: Array<{ id: string; name: string; color: string; score: number; survived: boolean }>;
+  ranking: Array<{ id: string; name: string; color: string; score: number; survived: boolean; bot: boolean }>;
   team: {
     distanceM: number;
     activeMin: number;
@@ -54,6 +56,8 @@ export type Results = {
     durationSec: number;
     peakLevel: number;
     simulated: boolean;
+    /** bots or demo location: a practice game */
+    practice: boolean;
   };
   awards: Array<{ title: string; playerName: string; detail: string }>;
 };
@@ -71,6 +75,8 @@ export type RoomView = {
   now: number;
   /** storm level 1..5: cells form faster and grow as it rises */
   level: number;
+  /** null while running; why the storm clock is stopped otherwise */
+  paused: null | 'host' | 'away' | 'reconnect';
   players: PlayerView[];
   strikes: StrikeView[];
   orbs: OrbView[];
@@ -87,7 +93,7 @@ export type GameEvent =
   | { kind: 'downed' }
   | { kind: 'revived'; by: string }
   | { kind: 'revivedOther'; name: string }
-  | { kind: 'orb'; orb: 'probe' | 'kit'; points: number }
+  | { kind: 'orb'; orb: 'star' | 'heart'; points: number }
   | { kind: 'oob'; dir: string; m: number }
   | { kind: 'teammateDown'; name: string; dir: string; m: number }
   | { kind: 'level'; level: number }
@@ -104,7 +110,13 @@ export type ClientMsg =
   | { t: 'again' }
   | { t: 'leave' }
   | { t: 'rotateWatch' }
-  | { t: 'kick'; id: string };
+  | { t: 'kick'; id: string }
+  /** the phone received (and spoke) this warning: its escape time starts now */
+  | { t: 'ack'; id: string }
+  /** app foreground/background */
+  | { t: 'active'; on: boolean }
+  /** host: stop or restart the storm clock, penalty-free */
+  | { t: 'pause'; on: boolean };
 
 export type ServerMsg =
   | { t: 'welcome'; playerId: string; secret: string; code: string; watchToken: string }

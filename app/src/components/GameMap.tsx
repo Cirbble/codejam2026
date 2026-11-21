@@ -2,7 +2,7 @@ import React from 'react';
 import { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 import { C, F } from '../theme';
 import type { MapProps } from './mapTypes';
-import { Cell, CellTag, Kit, Me, Probe, Scope } from './Radar';
+import { Cell, CellTag, Downed, Heart, Me, Scope, Star } from './Radar';
 
 /** The game radar: centred on you, rotated so up is the way you face. Same on every platform. */
 export default function GameMap({ room, meId, myFix, now, escape, heading, size }: MapProps & { size: number }) {
@@ -46,7 +46,7 @@ export default function GameMap({ room, meId, myFix, now, escape, heading, size 
       ))}
       {room.orbs.map((o) => {
         const p = toXY(o.lat, o.lng);
-        return o.kind === 'kit' ? <Kit key={o.id} x={p.x} y={p.y} /> : <Probe key={o.id} x={p.x} y={p.y} />;
+        return o.kind === 'heart' ? <Heart key={o.id} x={p.x} y={p.y} /> : <Star key={o.id} x={p.x} y={p.y} />;
       })}
       {escape &&
         (() => {
@@ -69,25 +69,32 @@ export default function GameMap({ room, meId, myFix, now, escape, heading, size 
         const q = toXY(p.lat!, p.lng!);
         const downed = p.status === 'downed';
         const name = p.name;
-        const hw = name.length * 3.7 + 4;
+        const hw = name.length * 4.3 + 4;
         const spots = [
-          { x: q.x, y: q.y - 15, a: 'middle' as const, cx: q.x },
-          { x: q.x, y: q.y + 24, a: 'middle' as const, cx: q.x },
-          { x: q.x + 14, y: q.y + 5, a: 'start' as const, cx: q.x + 14 + hw },
-          { x: q.x - 14, y: q.y + 5, a: 'end' as const, cx: q.x - 14 - hw },
+          { x: q.x, y: q.y - 17, a: 'middle' as const, cx: q.x },
+          { x: q.x, y: q.y + 28, a: 'middle' as const, cx: q.x },
+          { x: q.x + 16, y: q.y + 5, a: 'start' as const, cx: q.x + 16 + hw },
+          { x: q.x - 16, y: q.y + 5, a: 'end' as const, cx: q.x - 16 - hw },
         ];
         const spot = spots.find((s) => !hits({ x: s.cx, y: s.y - 4, w: hw, h: 8 })) ?? (p.bot ? null : spots[0]);
         if (spot) boxes.push({ x: spot.cx, y: spot.y - 4, w: hw, h: 8 });
         return (
           <G key={p.id}>
-            {downed && <Circle cx={q.x} cy={q.y} r={12 * scale} fill="none" stroke={C.ink} strokeDasharray="3 5" strokeWidth={1.5} />}
-            <Circle cx={q.x} cy={q.y} r={7.5} fill={downed ? C.surface : p.color} stroke={downed ? C.ink : C.white} strokeWidth={2.5} />
+            {downed && <Circle cx={q.x} cy={q.y} r={12 * scale} fill="none" stroke={C.ink} strokeDasharray="3 5" strokeWidth={2} />}
+            {downed ? (
+              <Downed x={q.x} y={q.y} />
+            ) : (
+              <>
+                <Circle cx={q.x} cy={q.y} r={10.5} fill={C.ink} />
+                <Circle cx={q.x} cy={q.y} r={8.5} fill={p.color} stroke={C.white} strokeWidth={2.5} />
+              </>
+            )}
             {spot && (
               <G>
-                <SvgText x={spot.x} y={spot.y} fill={C.surface} fontSize={12} textAnchor={spot.a} fontFamily={F.bodyBold} stroke={C.surface} strokeWidth={4} strokeLinejoin="round">
+                <SvgText x={spot.x} y={spot.y} fill={C.white} fontSize={14} textAnchor={spot.a} fontFamily={F.bodyBold} stroke={C.white} strokeWidth={5} strokeLinejoin="round">
                   {downed ? `${name} is down` : name}
                 </SvgText>
-                <SvgText x={spot.x} y={spot.y} fill={C.ink} fontSize={12} textAnchor={spot.a} fontFamily={F.bodyBold}>
+                <SvgText x={spot.x} y={spot.y} fill={C.ink} fontSize={14} textAnchor={spot.a} fontFamily={F.bodyBold}>
                   {downed ? `${name} is down` : name}
                 </SvgText>
               </G>

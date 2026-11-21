@@ -1,10 +1,11 @@
 import React, { useRef, useState } from 'react';
+import { Feather } from '@expo/vector-icons';
 import { PanResponder, View } from 'react-native';
 import { C } from '../theme';
 
 
 /** Demo-mode joystick. Calls onMove(east, north) in m/s. */
-export function Joystick({ onMove, size = 100, maxSpeed = 2.2 }: { onMove: (vx: number, vy: number) => void; size?: number; maxSpeed?: number }) {
+export function Joystick({ onMove, size = 112, maxSpeed = 2.2 }: { onMove: (vx: number, vy: number) => void; size?: number; maxSpeed?: number }) {
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const r = size / 2;
   const update = (dx: number, dy: number) => {
@@ -29,9 +30,16 @@ export function Joystick({ onMove, size = 100, maxSpeed = 2.2 }: { onMove: (vx: 
     <View
       {...pan.panHandlers}
       accessibilityLabel="Demo joystick"
-      style={{ width: size, height: size, borderRadius: r, backgroundColor: 'rgba(238,242,245,0.92)', borderWidth: 2, borderColor: C.line, alignItems: 'center', justifyContent: 'center' }}
+      style={{ width: size, height: size, borderRadius: r, backgroundColor: 'rgba(238,242,245,0.95)', borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', boxShadow: `0px 3px 0px ${C.line}` }}
     >
-      <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.ink, transform: [{ translateX: knob.x }, { translateY: knob.y }] }} />
+      {/* thumbstick: four direction marks and a ridged knob */}
+      <Feather name="chevron-up" size={16} color={C.inkSoft} style={{ position: 'absolute', top: 4 }} />
+      <Feather name="chevron-down" size={16} color={C.inkSoft} style={{ position: 'absolute', bottom: 4 }} />
+      <Feather name="chevron-left" size={16} color={C.inkSoft} style={{ position: 'absolute', left: 4 }} />
+      <Feather name="chevron-right" size={16} color={C.inkSoft} style={{ position: 'absolute', right: 4 }} />
+      <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center', transform: [{ translateX: knob.x }, { translateY: knob.y }], boxShadow: '0px 3px 0px #6F7F8B' }}>
+        <View style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'rgba(255,255,255,0.35)' }} />
+      </View>
     </View>
   );
 }

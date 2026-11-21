@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Cell, Me, Probe, Scope } from '../components/Radar';
+import { Cell, Me, Scope, Star } from '../components/Radar';
 import { Button, IconButton, Isobars, T } from '../components/ui';
 import { initNotifications } from '../game/coach';
 import { useGame } from '../net/GameProvider';
@@ -26,7 +26,7 @@ function HomeScope({ size }: { size: number }) {
       <Cell x={c + 60 * u} y={c - 64 * u} r={38 * u} k={0.6 + 0.4 * breathe(0)} />
       <Cell x={c - 82 * u} y={c + 34 * u} r={24 * u} k={0.25 + 0.3 * breathe(3)} />
       <Cell x={c + 28 * u} y={c + 90 * u} r={17 * u} k={0.05 + 0.2 * breathe(5)} />
-      <Probe x={c - 46 * u} y={c - 58 * u} />
+      <Star x={c - 46 * u} y={c - 58 * u} />
       <Circle cx={c - 30 * u} cy={c + 52 * u} r={7} fill={CREW[0]} stroke={C.white} strokeWidth={2.5} />
       <Circle cx={c + 70 * u} cy={c + 20 * u} r={7} fill={CREW[1]} stroke={C.white} strokeWidth={2.5} />
       <Me x={c} y={c} />

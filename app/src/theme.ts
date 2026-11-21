@@ -11,7 +11,7 @@ export const C = {
   inkSoft: '#465560',
   faint: '#5E6C77',
   line: '#B3BFC9',
-  isobar: 'rgba(22,33,42,0.10)',
+  isobar: 'rgba(22,33,42,0.06)',
   white: '#FFFFFF',
   // reflectivity, light rain -> hail core (danger only)
   dbz: ['#2E9B57', '#E3BC1A', '#EE8A22', '#D7372B', '#B32A78'] as const,

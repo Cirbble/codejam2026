@@ -28,15 +28,16 @@ export const setHeading = (h: number | null) => {
   headingDeg = h;
 };
 const COMPASS: Record<string, number> = { north: 0, 'north-east': 45, east: 90, 'south-east': 135, south: 180, 'south-west': 225, west: 270, 'north-west': 315 };
-/** "to your left" beats "south-west" when you're standing in a park */
+/**
+ * "ahead and to your left" beats "south-west" when you're standing in a park, but only with a good, fresh compass.
+ * Eight ways either way: body-relative never loses precision against the compass words.
+ */
+const REL = ['straight ahead', 'ahead and to your right', 'to your right', 'behind you, to the right', 'behind you', 'behind you, to the left', 'to your left', 'ahead and to your left'];
 export function relativeDir(compassDir: string): string {
   const deg = COMPASS[compassDir];
   if (deg == null || headingDeg == null) return compassDir;
   const rel = (((deg - headingDeg) % 360) + 360) % 360;
-  if (rel < 45 || rel >= 315) return 'straight ahead';
-  if (rel < 135) return 'to your right';
-  if (rel < 225) return 'behind you';
-  return 'to your left';
+  return REL[Math.round(rel / 45) % 8];
 }
 /** Let the voice play even with the iPhone ringer switch on silent. */
 export async function initAudio() {
@@ -112,7 +113,7 @@ export function handleEvent(ev: GameEvent) {
       break;
     case 'orb':
       buzz.tap();
-      say(ev.orb === 'kit' ? 'Kit.' : 'Probe.');
+      say(ev.orb === 'heart' ? 'Extra life.' : 'Star.');
       break;
     case 'oob':
       buzz.warn();

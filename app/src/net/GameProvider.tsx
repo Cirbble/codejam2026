@@ -63,6 +63,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     });
     // resync when the app returns to the foreground (sockets often die while pocketed)
     const sub = AppState.addEventListener('change', (st) => {
+      // tell the server first: a locked or backgrounded phone can't be hit and doesn't count as standing
+      if (st !== 'unknown' && ws.current?.readyState === 1) ws.current.send(JSON.stringify({ t: 'active', on: st === 'active' } satisfies ClientMsg));
       // A pocketed phone's socket often looks open but is dead: reconnect unless we heard from the server very recently.
       if (st === 'active' && want.current && (!ws.current || ws.current.readyState > 1 || Date.now() - lastMsgAt.current > 4000)) open();
     });
@@ -138,6 +140,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         }
       } else if (m.t === 'ev') {
         listeners.current.forEach((fn) => fn(m.ev));
+        // the warning reached this phone (and the voice has it): only now does the walk-out clock start
+        if (m.ev.kind === 'warn' && sock.readyState === 1) sock.send(JSON.stringify({ t: 'ack', id: m.ev.strikeId } satisfies ClientMsg));
       } else if (m.t === 'error') {
         setError(m.message);
         if (m.code === 'no_room' || m.code === 'full' || m.code === 'in_progress' || m.code === 'kicked' || !sessionRef.current) {

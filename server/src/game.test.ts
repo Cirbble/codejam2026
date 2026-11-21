@@ -17,9 +17,13 @@ const advance = (ms: number, room: Room, step = 250) => {
 
 const MCGILL = { lat: 45.5048, lng: -73.5772 };
 
-function setup(humans = 2, durationSec = 600) {
+function setup(humans = 2, durationSec = 600, autoAck = true) {
   const events: Array<[string, GameEvent]> = [];
-  const room = new Room('TEST', (id, ev) => events.push([id, ev]));
+  // phones ack every warning they receive (like the app does)
+  const room: Room = new Room('TEST', (id, ev) => {
+    events.push([id, ev]);
+    if (autoAck && ev.kind === 'warn') room.ack(id, ev.strikeId);
+  });
   const ps = Array.from({ length: humans }, (_, i) => room.addPlayer(`P${i}`));
   ps.forEach((p, i) => room.updatePosition(p.id, ...(Object.values(offsetM(MCGILL, i * 10, 0)) as [number, number]), 5, false));
   room.updateSettings({ durationSec });
@@ -264,6 +268,122 @@ test('edge zone: the escape goes around the side, not back through the zone', ()
   assert.ok(distanceM(center, e.exit) <= 65, 'exit stays in the arena');
   assert.ok(distanceM(zone, e.exit) >= zone.r, 'exit is out of the zone');
   assert.ok(e.m <= 14, `short route (${e.m} m), not the 23 m trip back through the zone`);
+});
+
+test('a warning the phone never acknowledged cannot hit', () => {
+  const { room, ps } = setup(1, 600, false);
+  room.start();
+  advance(5250, room);
+  room.strikes = [];
+  room.nextStrikeAt = Infinity;
+  const p = ps[0];
+  room.strikes.push({ id: 'n1', lat: p.lat!, lng: p.lng!, r: 12, warnAt: clock, hitAt: clock + 9000, kind: 'strike' });
+  for (let i = 0; i < 44; i++) {
+    hold(room);
+    advance(250, room);
+  }
+  assert.equal(p.hp, 3, 'never acked: no hit');
+  room.strikes.push({ id: 'n2', lat: p.lat!, lng: p.lng!, r: 12, warnAt: clock, hitAt: clock + 20_000, kind: 'strike' });
+  hold(room);
+  advance(250, room);
+  room.ack(p.id, 'n2');
+  for (let i = 0; i < 84; i++) {
+    hold(room);
+    advance(250, room);
+  }
+  assert.equal(p.hp, 2, 'acked in time: hit');
+});
+
+test('a 30 m fix does not make normal cells harmless', () => {
+  const { room, ps } = setup(1);
+  room.start();
+  advance(5250, room);
+  room.strikes = [];
+  room.nextStrikeAt = Infinity;
+  const p = ps[0];
+  const s = { id: 'a1', lat: p.lat!, lng: p.lng!, r: 10, warnAt: clock, hitAt: clock + 18_000, kind: 'strike' as const };
+  room.strikes.push(s);
+  for (let i = 0; i < 76; i++) {
+    room.updatePosition(p.id, s.lat, s.lng, 30, false);
+    advance(250, room);
+  }
+  assert.equal(p.hp, 2, 'standing in the middle with a 30 m fix still gets hit');
+});
+
+test('out of bounds: no points, and no win after the grace period', () => {
+  const { room, ps } = setup(1, 60);
+  room.updateSettings({ radiusM: 60 });
+  room.start();
+  advance(5250, room);
+  const far = offsetM(room.center!, 120, 0);
+  const before = ps[0].score;
+  for (let i = 0; i < 4 * 70 && room.phase !== 'ended'; i++) {
+    room.nextStrikeAt = Infinity;
+    clock += 0;
+    room.updatePosition(ps[0].id, far.lat, far.lng, 5, false);
+    advance(250, room);
+  }
+  assert.ok(ps[0].score - before < 1, 'no survival points outside the zone');
+  assert.equal(room.outcome, 'lost', 'parked outside the zone does not win');
+});
+
+test('a backgrounded phone cannot be hit, and the clock stops when everyone is away', () => {
+  const { room, ps } = setup(1);
+  room.start();
+  advance(5250, room);
+  room.strikes = [];
+  room.nextStrikeAt = Infinity;
+  const p = ps[0];
+  room.strikes.push({ id: 'b1', lat: p.lat!, lng: p.lng!, r: 12, warnAt: clock, hitAt: clock + 9000, kind: 'strike' });
+  hold(room);
+  advance(250, room);
+  room.setActive(p.id, false);
+  const ends = room.endsAt!;
+  for (let i = 0; i < 60; i++) advance(250, room);
+  assert.equal(room.paused, 'away');
+  assert.ok(room.endsAt! - ends >= 14_000, 'deadline moved with the pause');
+  assert.equal(p.hp, 3);
+  room.setActive(p.id, true);
+  advance(500, room);
+  assert.equal(room.paused, null);
+});
+
+test('host pause is penalty-free; bots only in practice rooms', () => {
+  const { room, ps } = setup(1);
+  room.setBots(3);
+  assert.equal([...room.players.values()].filter((p) => p.bot).length, 0, 'no bots in a real game');
+  room.updateSettings({ quick: true });
+  room.setBots(2);
+  assert.equal([...room.players.values()].filter((p) => p.bot).length, 2);
+  room.start();
+  advance(5250, room);
+  room.strikes = [{ id: 'h1', lat: ps[0].lat!, lng: ps[0].lng!, r: 12, warnAt: clock, hitAt: clock + 6000, kind: 'strike' }];
+  room.nextStrikeAt = Infinity;
+  hold(room);
+  advance(250, room);
+  room.setPaused(true);
+  for (let i = 0; i < 80; i++) advance(250, room);
+  assert.equal(ps[0].hp, 3, 'nothing lands while paused');
+  assert.ok(room.strikes.length === 1);
+  room.setPaused(false);
+  room.updateSettings({ quick: false });
+});
+
+test('after a redeploy the downtime does not count, and the clock waits for the crew', () => {
+  const { room, ps } = setup(1);
+  room.start();
+  advance(6000, room);
+  const ends = room.endsAt!;
+  const snap = JSON.parse(JSON.stringify(room.snapshot()));
+  clock += 30_000; // server down for 30 s
+  const back = Room.restore(snap, () => {});
+  assert.equal(back.endsAt, ends + 30_000);
+  advance(5000, back);
+  assert.equal(back.paused, 'reconnect');
+  back.setConnected(ps[0].id, true);
+  back.updatePosition(ps[0].id, ps[0].lat!, ps[0].lng!, 5, false);
+  advance(500, back);
+  assert.equal(back.paused, null);
 });
 
 test('nothing is scheduled to land after the storm passes', () => {

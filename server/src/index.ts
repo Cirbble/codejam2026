@@ -168,6 +168,7 @@ function handle(conn: Conn, m: ClientMsg) {
       p = room.addPlayer(m.name);
     } else if (m.name) p.name = m.name.slice(0, 16);
     room.setConnected(p.id, true);
+    room.setActive(p.id, true); // a phone that (re)connects is in the foreground
     conn.code = room.code;
     conn.playerId = p.id;
     send(ws, { t: 'welcome', playerId: p.id, secret: p.secret, code: room.code, watchToken: room.watchToken });
@@ -226,6 +227,18 @@ function handle(conn: Conn, m: ClientMsg) {
     case 'rotateWatch':
       if (!isHost) break;
       rotateWatch(room);
+      break;
+    case 'ack':
+      room.ack(conn.playerId, String(m.id));
+      break;
+    case 'active':
+      room.setActive(conn.playerId, !!m.on);
+      broadcast(room);
+      break;
+    case 'pause':
+      if (!isHost) break;
+      room.setPaused(!!m.on);
+      broadcast(room);
       break;
     case 'leave':
       room.removePlayer(conn.playerId);

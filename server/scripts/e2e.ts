@@ -26,6 +26,7 @@ function connect(name: string, code?: string, x = 0): Promise<Client> {
       } else if (m.t === 'state') c.room = m.room;
       else if (m.t === 'ev') {
         c.events.push(m.ev);
+        if (m.ev.kind === 'warn') c.ws.send(JSON.stringify({ t: 'ack', id: m.ev.strikeId })); // like the app: confirm receipt
         if (m.ev.kind === 'warn' && c === b) {
           // walk out the way the warning says, a little past the edge
           const deg = DIRS.indexOf(m.ev.moveDir) * 45;

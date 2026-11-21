@@ -61,7 +61,7 @@ export function Scope({ size, spanM, heading = 0, sweep = true, labels = true, c
         <Circle cx={c} cy={c} r={r} fill="url(#glass)" />
         <G clipPath="url(#disc)">
           {rings.map((m) => (
-            <Circle key={m} cx={c} cy={c} r={m * scale} fill="none" stroke={C.line} strokeWidth={1.2} />
+            <Circle key={m} cx={c} cy={c} r={m * scale} fill="none" stroke="#93A2AE" strokeWidth={1.6} />
           ))}
           <Line x1={c} y1={0} x2={c} y2={size} stroke={C.line} strokeOpacity={0.6} />
           <Line x1={0} y1={c} x2={size} y2={c} stroke={C.line} strokeOpacity={0.6} />
@@ -71,13 +71,13 @@ export function Scope({ size, spanM, heading = 0, sweep = true, labels = true, c
           {ticks.map((a) => {
             const long = a % 90 === 0;
             const r0 = r - (long ? 11 : 6);
-            return <Line key={a} x1={c + r0 * Math.sin(a * RAD)} y1={c - r0 * Math.cos(a * RAD)} x2={c + r * Math.sin(a * RAD)} y2={c - r * Math.cos(a * RAD)} stroke={C.ink} strokeOpacity={a === 0 ? 1 : long ? 0.5 : 0.22} strokeWidth={a === 0 ? 3 : 1.5} />;
+            return <Line key={a} x1={c + r0 * Math.sin(a * RAD)} y1={c - r0 * Math.cos(a * RAD)} x2={c + r * Math.sin(a * RAD)} y2={c - r * Math.cos(a * RAD)} stroke={C.ink} strokeOpacity={a === 0 ? 1 : long ? 0.7 : 0.3} strokeWidth={a === 0 ? 3.5 : 2} />;
           })}
-          <SvgText x={c} y={28} fill={C.ink} fontSize={13} fontFamily={F.bodyBold} textAnchor="middle" transform={`rotate(${h} ${c} 24)`}>
+          <SvgText x={c} y={30} fill={C.ink} fontSize={15} fontFamily={F.bodyBold} textAnchor="middle" transform={`rotate(${h} ${c} 25)`}>
             N
           </SvgText>
         </G>
-        <Circle cx={c} cy={c} r={r} fill="none" stroke={C.ink} strokeOpacity={0.18} strokeWidth={1.5} />
+        <Circle cx={c} cy={c} r={r} fill="none" stroke={C.ink} strokeOpacity={0.35} strokeWidth={2} />
         {labels && rings.map((m) => (
           <SvgText key={m} x={c + m * scale * 0.7071 + 4} y={c - m * scale * 0.7071 - 4} fill={C.faint} fontSize={10} fontFamily={F.mono}>
             {`${m} m`}
@@ -119,17 +119,30 @@ export function CellTag({ x, y, sec }: XY & { sec: number }) {
   );
 }
 
-export function Probe({ x, y }: XY) {
-  const r = 7;
-  return <Path d={`M${x},${y - r} L${x + r},${y} L${x},${y + r} L${x - r},${y} Z`} fill={C.surface} stroke={C.ink} strokeWidth={2} />;
+/** Points pickup: a five-point star. */
+export function Star({ x, y, r = 10 }: XY & { r?: number }) {
+  const pts = Array.from({ length: 10 }, (_, i) => {
+    const a = (i * 36 - 90) * RAD;
+    const rr = i % 2 ? r * 0.45 : r;
+    return `${x + rr * Math.cos(a)},${y + rr * Math.sin(a)}`;
+  }).join(' ');
+  return <Path d={`M${pts} Z`} fill={C.ink} stroke={C.white} strokeWidth={2} strokeLinejoin="round" />;
 }
 
-export function Kit({ x, y }: XY) {
+/** Extra life: a heart. */
+export function Heart({ x, y, s = 1 }: XY & { s?: number }) {
+  const k = 9 * s;
+  const d = `M${x},${y + k * 0.9} C${x - k * 1.4},${y - k * 0.1} ${x - k * 0.7},${y - k * 1.2} ${x},${y - k * 0.4} C${x + k * 0.7},${y - k * 1.2} ${x + k * 1.4},${y - k * 0.1} ${x},${y + k * 0.9} Z`;
+  return <Path d={d} fill={C.ink} stroke={C.white} strokeWidth={2} strokeLinejoin="round" />;
+}
+
+/** A downed teammate: a revive cross in a ring. */
+export function Downed({ x, y }: XY) {
   return (
     <G>
-      <Circle cx={x} cy={y} r={9} fill={C.surface} stroke={C.ink} strokeWidth={2} />
-      <Rect x={x - 1.5} y={y - 5} width={3} height={10} fill={C.ink} />
-      <Rect x={x - 5} y={y - 1.5} width={10} height={3} fill={C.ink} />
+      <Circle cx={x} cy={y} r={11} fill={C.white} stroke={C.ink} strokeWidth={2.5} />
+      <Rect x={x - 2} y={y - 6.5} width={4} height={13} rx={1} fill={C.ink} />
+      <Rect x={x - 6.5} y={y - 2} width={13} height={4} rx={1} fill={C.ink} />
     </G>
   );
 }
@@ -138,8 +151,9 @@ export function Kit({ x, y }: XY) {
 export function Me({ x, y, downed }: XY & { downed?: boolean }) {
   return (
     <G>
-      <Circle cx={x} cy={y} r={22} fill={C.ink} fillOpacity={0.08} />
-      <Circle cx={x} cy={y} r={11} fill={downed ? C.surface : C.ink} stroke={downed ? C.ink : C.white} strokeWidth={3} strokeDasharray={downed ? '3 3' : undefined} />
+      <Circle cx={x} cy={y} r={22} fill={C.ink} fillOpacity={0.1} />
+      <Circle cx={x} cy={y} r={13} fill={C.white} />
+      <Circle cx={x} cy={y} r={10} fill={downed ? C.surface : C.ink} stroke={downed ? C.ink : undefined} strokeWidth={downed ? 2.5 : 0} strokeDasharray={downed ? '3 3' : undefined} />
       {!downed && <Path d={`M${x},${y - 20} L${x + 6},${y - 12} L${x - 6},${y - 12} Z`} fill={C.ink} />}
     </G>
   );
