@@ -135,3 +135,25 @@ test('board view carries the server clock', () => {
   const v = board.boardView();
   assert.ok(v.now >= t && v.now <= Date.now());
 });
+
+test('a counted slot is reserved when a run starts: abandoning bad starts does not give it back', () => {
+  board.resetBoard(0);
+  const dev = 'juliet-phone';
+  // start a run: slot 1 reserved; the team is not on the board until a run finishes
+  assert.deepEqual(board.reserveRun('j1', 'Juliet', dev, 1), { counted: true, runsLeft: 2 });
+  assert.deepEqual(board.reserveRun('j1', 'Juliet', dev, 1), { counted: true, runsLeft: 2 }, 'idempotent');
+  assert.deepEqual(board.boardView().teams, [], 'reserved only: not shown');
+  // abandoned at 0 points, finalized with what it earned
+  const a = board.recordRun({ runId: 'j1', team: 'Juliet', playerName: 'j', score: 0, bestCardId: null, at: 2, device: dev });
+  assert.deepEqual([a.counted, a.runsLeft, a.best], [true, 2, 0]);
+  board.reserveRun('j2', 'Juliet', dev, 3);
+  board.recordRun({ runId: 'j2', team: 'Juliet', playerName: 'j', score: 30, bestCardId: null, at: 4, device: dev });
+  board.reserveRun('j3', 'Juliet', dev, 5); // started, then the server restarts / player leaves
+  board.recordRun({ runId: 'j3', team: 'Juliet', playerName: 'j', score: 10, bestCardId: null, at: 6, device: dev });
+  // a 4th start is practice from the moment it starts
+  assert.deepEqual(board.reserveRun('j4', 'Juliet', dev, 7), { counted: false, runsLeft: 0 });
+  const r4 = board.recordRun({ runId: 'j4', team: 'Juliet', playerName: 'j', score: 200, bestCardId: null, at: 8, device: dev });
+  assert.deepEqual([r4.counted, r4.best], [false, 30]);
+  const row = board.boardView().teams[0];
+  assert.deepEqual([row.team, row.best, row.plays], ['Juliet', 30, 4]);
+});

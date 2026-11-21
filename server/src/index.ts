@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { Room } from './room.js';
+import { Room, sortCards } from './room.js';
 import { IP_HOURLY_JUDGE, ipAttempts, judgePhoto, judgeStats, type Judgement } from './judge.js';
 import { canonicalLabel, normalizeLabel, scoreFind, scoreSolo, titleFor } from './rarity.js';
 import { dailyPrompts, nextTorontoMidnight, promptById, soloPrompts, squadPrompts, torontoDay } from './prompts.js';
@@ -15,7 +15,7 @@ import { DATA_DIR, PHOTO_DIR, byDevice, cards, commitFinds, countFind, peekCount
 import { MAX_TRIES } from './room.js';
 import { Lru } from './lru.js';
 import { dict } from './dict.js';
-import { boardView, displayTeam, hideTeam, recordRun, resetBoard, teamKey } from './board.js';
+import { boardView, displayTeam, hideTeam, recordRun, reserveRun, resetBoard, teamKey } from './board.js';
 import type { Card, ClientMsg, ErrorCode, FindBody, Prompt, Reply, ServerMsg, WsErrorCode } from './types.js';
 
 const PORT = Number(process.env.PORT || 8787);
@@ -379,7 +379,7 @@ async function squadFind(b: any, device: string, submissionId: string, ip: strin
   if (!room) return fail(409, 'closed', 'That squad is gone.');
   const player = room.auth(b.playerId, b.secret);
   if (!player) return fail(403, 'bad_request', 'Join the squad first.');
-  const pre = room.precheck(player.id, submissionId);
+  const pre = room.precheck(player.id, submissionId, hashOf(jpeg));
   if (pre.kind !== 'ok') return pre.reply;
   if (b.promptId && b.promptId !== pre.prompt.id) {
     room.abort(player.id, submissionId);
@@ -595,7 +595,23 @@ function recordSolo(room: Room) {
   room.board = recordRun({ runId: room.runId ?? room.code, team: room.team, playerName: p.name, score: p.score, bestCardId: room.results().best[p.id] ?? null, at: room.endedAt ?? Date.now(), device: p.device });
 }
 
+/** A solo run left before its end: put it on the board with the points earned so far (its slot was reserved). */
+function finalizeAbandoned(room: Room, playerId: string) {
+  const p = room.players.get(playerId);
+  if (!room.solo || !room.team || !p || room.phase === 'ended' || room.boardRecorded) return;
+  const current = room.phase === 'hunting' ? room.found.get(playerId) : undefined; // its points land at the reveal
+  const mine = [...room.rounds.flatMap((r) => r.cards), ...(current ? [current] : [])].filter((c) => c.playerId === playerId);
+  const best = sortCards(mine)[0];
+  try {
+    recordRun({ runId: room.runId ?? room.code, team: room.team, playerName: p.name, score: p.score + (current?.points ?? 0), bestCardId: best?.id ?? null, at: Date.now(), device: p.device });
+    room.boardRecorded = true;
+  } catch (e) {
+    console.error('[board] abandoned run not saved', (e as Error).message);
+  }
+}
+
 function leavePlayer(room: Room, playerId: string) {
+  finalizeAbandoned(room, playerId);
   room.removePlayer(playerId);
   for (const c of conns) if (c.code === room.code && c.playerId === playerId) c.code = c.playerId = undefined;
   if (room.players.size === 0) {
@@ -615,8 +631,14 @@ function handle(conn: Conn, m: ClientMsg) {
         team = displayTeam(m.team);
         if (!team) throw new WsError('other', 'Enter your team name.');
         if (!validDevice(m.device)) throw new WsError('other', 'Missing device.');
-        // one run at a time per phone; "Play again" right after a run ends is fine
-        if (activeSoloRun(m.device)) throw new WsError('rate', 'This phone is already in a solo run. Finish or leave it first.');
+        // one run at a time per phone ("Play again" after a run ends is fine). A create from a phone that is already
+        // in a run means its welcome was lost: hand back that run's credentials (the device id is the bearer secret).
+        const live = activeSoloRun(m.device);
+        if (live) {
+          const me = [...live.players.values()].find((x) => x.device === m.device)!;
+          attach(conn, live, me.id, me.secret);
+          return;
+        }
         if (windowLimited(soloIpHits, conn.ip, LIMITS.SOLO_PER_IP, 10 * 60_000)) throw new WsError('rate', 'Too many solo runs from this network. Try again in a few minutes.');
         if (windowLimited(teamHits, teamKey(team), LIMITS.TEAM_RUNS_PER_HOUR, 3600_000)) throw new WsError('rate', 'This team has played a lot this hour. Try again later.');
       }
@@ -627,6 +649,13 @@ function handle(conn: Conn, m: ClientMsg) {
       const p = room.addPlayer(m.name, validDevice(m.device) ? m.device : '');
       if (solo) {
         room.start(p.id); // a solo run starts on its own: 3 s countdown, then round 1
+        try {
+          reserveRun(room.runId!, team!, m.device); // take this phone's counted slot now, so abandoning doesn't return it
+        } catch (e) {
+          console.error('[board] reserve failed', (e as Error).message);
+          rooms.delete(code);
+          throw new WsError('other', 'Could not start the run. Try again.');
+        }
       }
       rememberOp(m, code, p.id);
       attach(conn, room, p.id, p.secret);

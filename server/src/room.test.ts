@@ -769,7 +769,42 @@ test('shooting: a press followed by a rejected find leaves no hold; early presse
   advance(3000);
   const late = room.precheck(ps[0].id, 'one-late');
   assert.equal(late.kind, 'ok', 'press 3 s before the buzzer: one late upload');
-  room.abort(ps[0].id, 'one-late');
+  room.abort(ps[0].id, 'one-late'); // transient refusal (rate / busy / AI down)
   assert.equal(room.precheck(ps[0].id, 'second-late').kind, 'error', 'only one late upload per press');
-  assert.equal(room.latePending(), false);
+  assert.equal(room.latePending(), true, 'the admitted upload keeps the reveal open for its retry');
+});
+
+test('a late upload refused for a transient reason can retry with the same submissionId and photo until the grace deadline', () => {
+  const { room, ps, advance } = setup(false, 2);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const pid = room.prompt!.id;
+  advance(HUNT_MS - 3000);
+  room.markShooting(ps[0].id, pid);
+  advance(3000);
+  advance(5000);
+  assert.equal(room.precheck(ps[0].id, 'sub', 'hashA').kind, 'ok');
+  room.abort(ps[0].id, 'sub'); // e.g. 429 busy
+  advance(4000);
+  assert.equal(room.precheck(ps[0].id, 'sub', 'hashB').kind, 'error', 'a different photo is not the same submission');
+  const again = room.precheck(ps[0].id, 'sub', 'hashA');
+  assert.equal(again.kind, 'ok', 'same submission + photo is re-admitted');
+  assert.ok((again as any).receivedAt <= room.huntEndedAt!, 'still counts as received at the press');
+  advance(15_000); // judging finished 27 s after the deadline
+  const r = room.settle(ps[0].id, 'sub', 1, { accepted: true }, () => card('bench', 'P0', 30, 50, ps[0].id));
+  assert.equal((r.body as any).accepted, true);
+  assert.equal(room.lateAdmit.size, 0);
+  // past the grace deadline a retry is closed
+  const { room: r2, ps: q, advance: adv2 } = setup(false, 2);
+  r2.start(q[0].id);
+  adv2(COUNTDOWN_MS);
+  const p2 = r2.prompt!.id;
+  adv2(HUNT_MS - 2000);
+  r2.markShooting(q[0].id, p2);
+  adv2(2000);
+  assert.equal(r2.precheck(q[0].id, 's', 'h').kind, 'ok');
+  r2.abort(q[0].id, 's');
+  adv2(27_000);
+  assert.equal(r2.round, 2, 'grace over: the reveal let go and the next prompt started');
+  assert.equal(r2.lateAdmit.size, 0);
 });

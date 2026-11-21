@@ -231,7 +231,8 @@ b.ws.close();
   check(s.room?.solo === true && s.room.team === teamName.replace(/\s+/g, ' ') && s.room.totalRounds === 3, `solo room ${s.code} for "${s.room?.team}"`);
   check(await waitFor(s, (r) => r.phase === 'countdown' || r.phase === 'hunting', 2000), 'solo starts on its own');
   const again2 = await connect({ t: 'create', name: 'Solo', quick: true, solo: true, team: teamName, op: hex(8) }, s.device).catch((e) => e as Error);
-  check(again2 instanceof Error && /rate/.test(again2.message), 'one solo run at a time per phone');
+  check(!(again2 instanceof Error) && again2.code === s.code && again2.id === s.id && again2.secret === s.secret, 'lost welcome: a new Start from the same phone gets the running run back');
+  if (!(again2 instanceof Error)) again2.ws.close();
   const crash = await connect({ t: 'join', code: s.code, name: 'Crasher' }).catch((e) => e as Error);
   check(crash instanceof Error && /full/.test(crash.message), 'joining a solo room -> full');
   check(await waitFor(s, (r) => r.phase === 'hunting' && r.prompt?.id === 'i-red', 6000), 'solo round 1 is "something red"');
@@ -268,6 +269,11 @@ b.ws.close();
     sendWs(again3, { t: 'leave' });
     await sleep(300);
     again3.ws.close();
+    if (!PROD) {
+      const b2 = await api('/api/board');
+      const row2 = b2.json?.teams?.find((t: any) => t.team === s.room.team);
+      check(row2?.plays === 2, `an abandoned run is finalized on the board (plays ${row2?.plays})`);
+    }
   }
   const reset = await fetch(`${BASE}/api/board/reset?token=nope`, { method: 'POST' });
   check(reset.status === 404, 'board reset needs the token');
