@@ -16,7 +16,7 @@ import { C, F, TIERS } from '../theme';
 type Phase =
   | { k: 'aim' }
   | { k: 'judging'; uri: string }
-  | { k: 'won'; card: Card }
+  | { k: 'won'; card: Card; setsDone?: { id: string; name: string }[] }
   | { k: 'nope'; uri: string; verdict: string; triesLeft?: number; screen?: boolean }
   | { k: 'error'; uri?: string; message: string; retry?: () => void };
 
@@ -64,7 +64,10 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
     if (mode !== 'squad') return;
     const closed = roomPhase !== 'hunting' || roomRound !== startRound.current;
     if (!closed) return;
-    const mineIn = !!squad.room?.players.find((p) => p.id === squad.session?.playerId)?.found || !!squad.room?.rounds.some((r) => r.cards.some((c) => c.playerId === squad.session?.playerId && c.promptId === promptId));
+    const mineIn =
+      (!squad.room?.bingo && !!squad.room?.players.find((p) => p.id === squad.session?.playerId)?.found) ||
+      !!squad.room?.bingoBoard?.marks[squad.session?.playerId ?? '']?.includes(promptId) ||
+      !!squad.room?.rounds.some((r) => r.cards.some((c) => c.playerId === squad.session?.playerId && c.promptId === promptId));
     if (phase.k === 'judging' && !mineIn) return; // the verdict is still on its way
     const t = setTimeout(() => nav.back(), phase.k === 'won' ? 2200 : phase.k === 'aim' ? 0 : 2500);
     return () => clearTimeout(t);
@@ -80,7 +83,10 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
     if ('error' in res) {
       const again = ['network', 'ai_down', 'bad_response', 'rate', 'budget'].includes(res.error);
       setPhase({ k: 'error', uri, message: res.message, retry: again ? () => judge(uri, b64, submissionId) : undefined });
-    } else if (res.accepted) setPhase({ k: 'won', card: res.card });
+    } else if (res.accepted) {
+      setPhase({ k: 'won', card: res.card, setsDone: res.setsDone });
+      if (res.setsDone?.length) setTimeout(() => tap('medium'), 1200); // after the card flip
+    }
     else setPhase({ k: 'nope', uri, verdict: res.verdict, triesLeft: res.triesLeft, screen: res.reason === 'screen' });
   };
 
@@ -140,7 +146,12 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
           {phase.k === 'won' && (
             <>
               <FlipReveal card={phase.card} width={cardW} />
-
+              {phase.setsDone?.map((s) => (
+                <View key={s.id} style={styles.setDone}>
+                  <Feather name="award" size={20} color={C.white} />
+                  <T style={{ color: C.white, fontFamily: F.bodyBold, fontSize: 16 }}>Set complete: {s.name}</T>
+                </View>
+              ))}
             </>
           )}
           {(phase.k === 'nope' || phase.k === 'error') && (
@@ -156,17 +167,17 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
                   {phase.k === 'error' ? 'Not judged yet' : phase.screen ? 'Find the real thing' : 'Not a match'}
                 </H>
                 <T style={{ textAlign: 'center', fontSize: 17, color: C.ink }}>{phase.k === 'nope' ? phase.verdict : phase.message}</T>
-                {phase.k === 'nope' && phase.triesLeft != null && <T style={{ fontFamily: F.bodyBold, color: C.blaze }}>{phase.triesLeft === 0 ? 'No tries left' : `${phase.triesLeft} ${phase.triesLeft === 1 ? 'try' : 'tries'} left`} {mode === 'squad' ? 'this round' : 'today'}</T>}
+                {phase.k === 'nope' && phase.triesLeft != null && <T style={{ fontFamily: F.bodyBold, color: C.blaze }}>{phase.triesLeft === 0 ? 'No tries left' : `${phase.triesLeft} ${phase.triesLeft === 1 ? 'try' : 'tries'} left`} {mode === 'squad' ? (squad.room?.bingo ? 'on this square' : 'this round') : 'today'}</T>}
               </View>
             </>
           )}
         </View>
         <View style={{ gap: 12 }}>
-          {phase.k === 'won' && <Button title={mode === 'squad' ? 'Back to the round' : 'Done'} onPress={close} />}
+          {phase.k === 'won' && <Button title={mode === 'squad' ? (squad.room?.bingo ? 'Back to the card' : 'Back to the round') : 'Done'} onPress={close} />}
           {phase.k === 'nope' && (phase.triesLeft == null || phase.triesLeft > 0) && <Button title="Try again" icon="camera" onPress={() => setPhase({ k: 'aim' })} />}
           {phase.k === 'error' && (phase.retry ? <Button title="Send again" icon="refresh-cw" onPress={phase.retry} /> : <Button title="Try again" icon="camera" onPress={() => setPhase({ k: 'aim' })} />)}
           {phase.k === 'nope' && phase.triesLeft === 0 ? (
-            <Button title={mode === 'squad' ? 'Back to the round' : 'Back to today'} onPress={close} />
+            <Button title={mode === 'squad' ? (squad.room?.bingo ? 'Back to the card' : 'Back to the round') : 'Back to today'} onPress={close} />
           ) : (
             phase.k !== 'won' && phase.k !== 'judging' && <Button title="Back" kind="quiet" onPress={close} />
           )}
@@ -262,5 +273,6 @@ const styles = StyleSheet.create({
   shutter: { width: 84, height: 84, borderRadius: 42, borderWidth: 5, borderColor: C.white, alignItems: 'center', justifyContent: 'center' },
   shutterIn: { width: 64, height: 64, borderRadius: 32, backgroundColor: C.white },
   rejected: { borderRadius: 18, borderWidth: 2, borderColor: C.ink, overflow: 'hidden', transform: [{ rotate: '-3deg' }] },
-  devChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.18)' },
+  setDone: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, height: 46, borderRadius: 999, backgroundColor: C.blaze },
+  devChip:{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.18)' },
 });

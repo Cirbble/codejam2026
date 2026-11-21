@@ -110,10 +110,58 @@ export const INDOOR: PromptDef[] = [
 ];
 
 export const QUICK_OPENER = 'i-red';
+
+/**
+ * Impostor mode: each prompt below has a twin that is close but different. One player per round gets the twin and
+ * has to find something that fits it while passing as a find for the real prompt.
+ */
+const twin = (of: string, text: string, examples: string) => [of, P(`t-${of}`, 'twin', text, examples)] as const;
+export const TWINS: Record<string, PromptDef> = Object.fromEntries([
+  // outdoor
+  twin('o-red', 'something orange', 'a traffic cone, a pumpkin, a leaf, a construction sign'),
+  twin('o-yellow', 'something green', 'a bench, a door, a recycling bin, a sign'),
+  twin('o-blue', 'something purple', 'a flower, a car, a sweater, a sign'),
+  twin('o-round', 'something oval', 'an egg, a mirror, a leaf, a sign'),
+  twin('o-triangle', 'something diamond-shaped', 'a sign, a kite, a fence pattern, a tile'),
+  twin('o-stripes', 'something with zigzags', 'a fence, a tire track, a pattern, a roof'),
+  twin('o-shiny', 'something see-through', 'a window, a bottle, a bag, a bus shelter'),
+  twin('o-soft', 'something squishy', 'a ball, moss, a cushion, mud'),
+  twin('o-metal', 'something made of rubber', 'a tire, a boot, a ball, a mat'),
+  twin('o-wood', 'something made of cardboard', 'a box, a cup, a sign, a tube'),
+  twin('o-stone', 'something made of concrete', 'a curb, a step, a planter, a wall'),
+  twin('o-flower', 'a weed', 'a dandelion, clover, a thistle, grass in a crack'),
+  twin('o-leaf', 'a twig or branch', 'a fallen stick, a branch, a twig, a sapling'),
+  twin('o-bird', 'a bug or insect', 'an ant, a bee, a beetle, a spider'),
+  twin('o-wheels', 'something with a handle', 'a door, a bag, a shopping cart, a mug'),
+  twin('o-older', 'something rusty', 'a gate, a nail, a bike chain, a sign post'),
+  twin('o-sign-number', 'a sign with a picture on it', 'a crosswalk sign, a logo, a poster, a map'),
+  twin('o-light', 'something that runs on batteries', 'a phone, a watch, a toy, a remote'),
+  twin('o-holds-water', 'something that holds air', 'a tire, a ball, a balloon, a bag'),
+  twin('o-hanging', 'something leaning', 'a bike, a ladder, a sign, a tree'),
+  // indoor
+  twin('i-red', 'something pink', 'a sticky note, an eraser, a shirt, a cup'),
+  twin('i-blue', 'something green', 'a plant, a pen, a bottle, a book cover'),
+  twin('i-round', 'something square', 'a sticky note, a tile, a coaster, a box'),
+  twin('i-stripes', 'something with dots', 'a dice, a speaker grille, a shirt, a keyboard light'),
+  twin('i-soft', 'something squishy', 'a stress ball, a sponge, a pillow, a gummy'),
+  twin('i-shiny', 'something see-through', 'a glass, a bottle, a bag, a window'),
+  twin('i-paper', 'something made of cardboard', 'a box, a cup sleeve, a tube, a folder'),
+  twin('i-wood', 'something brown', 'a bag, a shoe, a table, a belt'),
+  twin('i-write', 'something you can cut with', 'scissors, a knife, a ruler edge, a box cutter'),
+  twin('i-wear', 'something you carry', 'a bag, keys, a phone, a bottle'),
+  twin('i-plug', 'something with a battery', 'a phone, a mouse, a remote, a watch'),
+  twin('i-holds-water', 'something with a lid', 'a jar, a laptop, a box, a bottle'),
+  twin('i-number', 'something with letters on it', 'a keyboard, a book, a label, a shirt'),
+  twin('i-small', 'something thinner than a pencil', 'a cable, a straw, a hair tie, a needle'),
+  twin('i-older', 'something worn out', 'a shoe, an eraser, a book, a cable'),
+  twin('i-noise', 'something that vibrates', 'a phone, a speaker, a fan, a watch'),
+]);
+const TWIN_BY_ID = new Map(Object.values(TWINS).map((t) => [t.id, t]));
+export const twinFor = (promptId: string): PromptDef | undefined => TWINS[promptId];
 const ALL = new Map([...OUTDOOR, ...INDOOR].map((p) => [p.id, p]));
 
 export function promptById(id: string): PromptDef | undefined {
-  return ALL.get(id);
+  return ALL.get(id) ?? TWIN_BY_ID.get(id);
 }
 
 /** Pick n prompts, never two from one category. rand() in [0,1). */
@@ -160,8 +208,10 @@ export function soloPrompts(day: string): PromptDef[] {
   return pickPrompts(INDOOR, 3, seeded(`rarefind-quick:${day}`), QUICK_OPENER);
 }
 
-export function squadPrompts(quick: boolean, rand: () => number = Math.random): PromptDef[] {
-  return quick ? pickPrompts(INDOOR, 5, rand, QUICK_OPENER) : pickPrompts(OUTDOOR, 5, rand);
+/** n: 5 for rounds, 9 for a bingo card (each pool has enough categories for 9 distinct ones). */
+export function squadPrompts(quick: boolean, rand: () => number = Math.random, n = 5, twinsOnly = false): PromptDef[] {
+  const only = (pool: PromptDef[]) => (twinsOnly ? pool.filter((p) => TWINS[p.id]) : pool);
+  return quick ? pickPrompts(only(INDOOR), n, rand, QUICK_OPENER) : pickPrompts(only(OUTDOOR), n, rand);
 }
 
 // ---------- Toronto day ----------

@@ -129,3 +129,20 @@ test('lastRun features the most recent visible run', () => {
   board.hideTeam('India Team');
   assert.deepEqual(board.boardView().lastRun, { team: 'Hotel', score: 60, at: 1 }, 'hidden teams skipped');
 });
+
+test('ghost: the day best counted run with splits; other days, practice, hidden and test teams are skipped', () => {
+  board.resetBoard(0);
+  const day = Date.UTC(2026, 10, 21, 17); // noon in Toronto
+  const sp = (a: number, b: number) => [{ ms: a, points: 30 }, null, { ms: b, points: 60 }];
+  board.recordRun({ runId: 'g1', team: 'Nova', playerName: 'n', score: 90, bestCardId: null, at: day, device: 'd1', splits: sp(20_000, 41_000) });
+  board.recordRun({ runId: 'g2', team: 'Orbit', playerName: 'o', score: 200, bestCardId: null, at: day - 86_400_000, device: 'd2', splits: sp(1, 2) });
+  board.recordRun({ runId: 'g3', team: 'E2E bot', playerName: 'e', score: 300, bestCardId: null, at: day, device: 'd3', splits: sp(1, 2) });
+  board.recordRun({ runId: 'g4', team: 'Pulse', playerName: 'p', score: 150, bestCardId: null, at: day, device: 'd4' }); // no splits (older run)
+  const g = board.ghostFor('2026-11-21');
+  assert.equal(g?.team, 'Nova');
+  assert.equal(g?.score, 90);
+  assert.deepEqual(g?.splits, sp(20_000, 41_000));
+  board.hideTeam('Nova');
+  assert.equal(board.ghostFor('2026-11-21'), null, 'hidden teams are not raced');
+  assert.equal(board.ghostFor('2026-11-22'), null, 'nobody yet today');
+});

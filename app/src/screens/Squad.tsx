@@ -9,31 +9,12 @@ import { Bar, Button, H, IconButton, Label, Mono, Screen, T, tap } from '../comp
 import { useNav } from '../nav';
 import { useSquad } from '../squad';
 import { SoloResults } from './Solo';
+import { BingoCard, BingoHunt, BingoReveal } from './Bingo';
+import { ImpostorResult, ImpostorVote, impostorTally } from './Impostor';
+import { Avatar, clock, useClock } from '../components/squadBits';
+import { HowToLink, HowToSheet, modeOf, useHowTo } from '../components/HowTo';
+import { GhostBar } from './Solo';
 import { C, F, TIERS } from '../theme';
-
-const AVATAR = ['#23914A', '#2563EB', '#8B35E0', '#E0457B', '#F2542D', '#0E7C86', '#9A6B00', '#475569'];
-const colorFor = (id: string) => AVATAR[[...id].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR.length];
-
-function useClock(skew: number) {
-  const [now, setNow] = useState(Date.now() - skew);
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now() - skew), 250);
-    return () => clearInterval(id);
-  }, [skew]);
-  return now;
-}
-const clock = (ms: number) => {
-  const s = Math.max(0, Math.ceil(ms / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-};
-
-function Avatar({ id, name, size = 36 }: { id: string; name: string; size?: number }) {
-  return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colorFor(id), borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ fontFamily: F.display, color: C.white, fontSize: size * 0.45 }}>{name.slice(0, 1).toUpperCase()}</Text>
-    </View>
-  );
-}
 
 export default function Squad() {
   const squad = useSquad();
@@ -41,7 +22,19 @@ export default function Squad() {
   if (!squad.room) return <Connecting />;
   const r = squad.room;
   const screen =
-    r.phase === 'lobby' ? <Lobby room={r} /> : r.phase === 'countdown' || r.phase === 'hunting' ? <Hunt room={r} /> : r.phase === 'reveal' ? <RoundReveal room={r} /> : r.solo ? <SoloResults room={r} /> : <Results room={r} />;
+    r.phase === 'lobby' ? (
+      <Lobby room={r} />
+    ) : r.phase === 'countdown' || (r.phase === 'hunting' && !r.bingo) ? (
+      <Hunt room={r} />
+    ) : r.phase === 'hunting' ? (
+      <BingoHunt room={r} />
+    ) : r.phase === 'reveal' ? (
+      r.bingo ? <BingoReveal room={r} /> : r.impostor ? r.impostor.voteOpen ? <ImpostorVote room={r} /> : <ImpostorResult room={r} /> : <RoundReveal room={r} />
+    ) : r.solo ? (
+      <SoloResults room={r} />
+    ) : (
+      <Results room={r} />
+    );
   return (
     <View style={{ flex: 1 }}>
       {screen}
@@ -139,8 +132,11 @@ function Lobby({ room }: { room: RoomView }) {
   const squad = useSquad();
   const me = squad.session!.playerId;
   const host = room.hostId === me;
+  // the mode's how-to opens the first time this phone meets it (also when the host switches modes)
+  const howto = useHowTo(modeOf(room));
   return (
     <Screen>
+      <HowToSheet k={howto.open} onClose={howto.close} />
       <Bar onBack={nav.back} title="Squad" />
       <View style={{ alignItems: 'center', gap: 10, marginTop: 8 }}>
         <Label>Squad code</Label>
@@ -174,21 +170,82 @@ function Lobby({ room }: { room: RoomView }) {
       <View style={{ gap: 12 }}>
         {host ? (
           <>
+            <ModePicker room={room} onHelp={howto.show} />
             <View style={styles.toggle}>
               <View style={{ flex: 1 }}>
-                <T style={{ fontFamily: F.bodyBold }}>Quick indoor rounds</T>
-                <Mono>{room.quick ? '60 s each' : '3 min each'}</Mono>
+                <T style={{ fontFamily: F.bodyBold }}>{room.bingo ? 'Indoor prompts' : 'Quick indoor rounds'}</T>
+                <Mono>{room.bingo ? (room.quick ? 'Things in the room · 3 min' : 'Off: outdoor prompts · 5 min') : room.quick ? '60 s each' : '3 min each'}</Mono>
               </View>
               <Switch value={room.quick} disabled={!squad.connected} onValueChange={(v) => squad.send({ t: 'settings', quick: v })} trackColor={{ true: C.ink, false: C.line }} thumbColor={C.white} />
             </View>
-            <Button title="Start" icon="play" kind="blaze" onPress={() => squad.send({ t: 'start' })} disabled={!squad.connected} />
+            <Button title="Start" icon="play" kind="blaze" onPress={() => squad.send({ t: 'start' })} disabled={!squad.connected || (!!room.impostor && room.players.length < 3)} />
+            {squad.error && <T style={{ color: C.blaze, fontFamily: F.bodyBold, textAlign: 'center' }}>{squad.error}</T>}
           </>
         ) : (
-          <Mono style={{ textAlign: 'center', paddingVertical: 18 }}>Waiting for the host to start</Mono>
+          <View style={{ paddingVertical: 10, gap: 6 }}>
+            <Mono style={{ textAlign: 'center' }}>
+              {room.bingo ? 'Bingo game · ' : room.unique ? 'Unique only · ' : room.impostor ? 'Impostor · ' : ''}Waiting for the host to start
+            </Mono>
+            <HowToLink onPress={howto.show} />
+          </View>
         )}
         <Button title="Leave squad" kind="quiet" onPress={squad.leave} />
       </View>
     </Screen>
+  );
+}
+
+type Mode = 'classic' | 'bingo' | 'unique' | 'impostor';
+const MODES: { key: Mode; label: string }[] = [
+  { key: 'classic', label: 'Classic' },
+  { key: 'bingo', label: 'Bingo' },
+  { key: 'unique', label: 'Unique' },
+  { key: 'impostor', label: 'Impostor' },
+];
+
+/** Host's game mode choice: the modes are exclusive, so one row of pills and a line saying what it does. */
+function ModePicker({ room, onHelp }: { room: RoomView; onHelp: () => void }) {
+  const squad = useSquad();
+  const mode: Mode = room.bingo ? 'bingo' : room.unique ? 'unique' : room.impostor ? 'impostor' : 'classic';
+  const min = room.impostor?.minPlayers ?? 3;
+  const about: Record<Mode, string> = {
+    classic: `5 rounds, one prompt each · ${room.quick ? '60 s' : '3 min'}`,
+    bingo: `A 3×3 card, all at once · ${room.quick ? '3' : '5'} min. Only full lines score.`,
+    unique: 'Same find as a friend? Both score 0.',
+    impostor: room.players.length < min ? `Needs ${min} or more players.` : 'One player gets a different prompt. Vote them out.',
+  };
+  const pick = (m: Mode) => {
+    tap();
+    squad.send(m === 'classic' ? { t: 'settings', bingo: false, unique: false, impostor: false } : { t: 'settings', [m]: true });
+  };
+  return (
+    <View style={[styles.toggle, { flexDirection: 'column', alignItems: 'stretch', gap: 10 }]}>
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        {MODES.map((m) => {
+          const on = m.key === mode;
+          return (
+            <Pressable
+              key={m.key}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: on }}
+              disabled={!squad.connected}
+              onPress={() => pick(m.key)}
+              style={[styles.mode, on && { backgroundColor: C.ink }]}
+            >
+              <Text numberOfLines={1} style={{ fontFamily: F.bodyBold, fontSize: 14, color: on ? C.white : C.ink }}>
+                {m.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <Mono style={{ flex: 1, color: mode === 'impostor' && room.players.length < min ? C.blaze : C.inkSoft }}>{about[mode]}</Mono>
+        <Pressable accessibilityRole="button" accessibilityLabel="How to play" hitSlop={10} onPress={onHelp}>
+          <Feather name="help-circle" size={22} color={C.ink} />
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -199,7 +256,7 @@ function Hunt({ room }: { room: RoomView }) {
   const me = squad.session!.playerId;
   const mine = room.players.find((p) => p.id === me);
   const left = (room.endsAt ?? now) - now;
-  const span = (room.quick ? 60 : 180) * 1000;
+  const span = room.huntMs ?? (room.quick ? 60 : 180) * 1000;
   const urgent = left < 20_000;
   const host = room.hostId === me;
 
@@ -207,9 +264,7 @@ function Hunt({ room }: { room: RoomView }) {
     return (
       <Screen>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-          <Label>
-            Round {room.round} of {room.totalRounds}
-          </Label>
+          <Label>{room.bingo ? `Bingo · 9 squares · ${clock(span)}` : `Round ${room.round} of ${room.totalRounds}`}</Label>
           <H size={140} style={{ fontVariant: ['tabular-nums'] }}>
             {Math.max(1, Math.ceil(left / 1000))}
           </H>
@@ -226,12 +281,22 @@ function Hunt({ room }: { room: RoomView }) {
       <View style={styles.track}>
         <View style={{ width: `${Math.max(0, Math.min(1, left / span)) * 100}%`, height: '100%', backgroundColor: urgent ? C.blaze : C.ink, borderRadius: 999 }} />
       </View>
+      {room.solo && <GhostBar room={room} left={left} span={span} />}
       <View style={{ flex: 1, justifyContent: 'center' }}>
-        <View style={styles.promptCard}>
-          <Sparkle size={34} />
+        <View style={[styles.promptCard, room.impostor?.you && { backgroundColor: C.blaze }]}>
+          {room.impostor?.you ? <Label style={{ color: C.white }}>You're the impostor</Label> : <Sparkle size={34} />}
           <H size={44} style={{ color: C.paper }}>
             {cap(room.prompt?.text)}
           </H>
+          {room.unique && <Mono style={{ color: C.paper }}>Unique only: skip the obvious one. Same find as a friend scores 0.</Mono>}
+          {room.impostor &&
+            (room.impostor.you ? (
+              <T style={{ color: C.white, fontFamily: F.bodyBold }}>
+                Everyone else got "{room.impostor.crewPrompt?.text}". Find yours so it passes as theirs.
+              </T>
+            ) : (
+              <Mono style={{ color: C.paper }}>One of you has a different prompt. Watch what they shoot.</Mono>
+            ))}
         </View>
         {!room.solo && (
           <T style={{ fontFamily: F.bodyBold, textAlign: 'center', marginTop: 22 }}>
@@ -284,6 +349,7 @@ function RoundReveal({ room }: { room: RoomView }) {
   const { width } = useWindowDimensions();
   const cards = room.reveal ?? [];
   const same = useMemo(() => sameAs(cards), [cards]);
+  const twoLine = cards.some((c) => c.sameAs?.length || same[c.id]); // keeps the cards in a row aligned
   const cw = cards.length === 1 ? Math.min(width - 80, 300) : Math.min(width * 0.62, 260);
   const last = room.round >= room.totalRounds;
   return (
@@ -303,11 +369,23 @@ function RoundReveal({ room }: { room: RoomView }) {
         ) : (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 18, paddingHorizontal: 20, paddingVertical: 12, flexGrow: 1, justifyContent: cards.length * (cw + 18) < width ? 'center' : 'flex-start' }} snapToInterval={cw + 18} decelerationRate="fast">
             {cards.map((c) => (
-              <View key={c.id} style={{ gap: 10 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <T style={{ fontFamily: F.bodyBold, fontSize: 18 }}>{c.playerName}</T>
-                  <T style={{ fontFamily: F.display, fontSize: 18, color: TIERS[c.tier].text }}>+{c.points}</T>
-                  {c.sameAs?.length ? <Mono>same as {c.sameAs.join(', ')}</Mono> : same[c.id] ? <Mono>same as {same[c.id]}</Mono> : null}
+              <View key={c.id} style={{ gap: 10, width: cw }}>
+                <View style={{ gap: 2, minHeight: twoLine ? 50 : undefined }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <T numberOfLines={1} style={{ fontFamily: F.bodyBold, fontSize: 18, flexShrink: 1 }}>{c.playerName}</T>
+                    {room.unique && c.sameAs?.length ? (
+                      <T style={{ fontFamily: F.display, fontSize: 18, color: C.blaze, textDecorationLine: 'line-through' }}>+{c.points}</T>
+                    ) : (
+                      <T style={{ fontFamily: F.display, fontSize: 18, color: TIERS[c.tier].text }}>+{c.points}</T>
+                    )}
+                  </View>
+                  {c.sameAs?.length ? (
+                    <Mono numberOfLines={1} style={room.unique ? { color: C.blaze } : undefined}>
+                      {room.unique ? 'Scores 0 · ' : ''}same as {c.sameAs.join(', ')}
+                    </Mono>
+                  ) : same[c.id] ? (
+                    <Mono numberOfLines={1}>same as {same[c.id]}</Mono>
+                  ) : null}
                 </View>
                 <GameCard card={c} width={cw} />
               </View>
@@ -336,6 +414,8 @@ function Results({ room }: { room: RoomView }) {
   const cardById = new Map(all.map((c) => [c.id, c]));
   const roundsWon = (id: string) => (room.roundWinners ?? []).map((w, i) => (w === id ? i + 1 : 0)).filter(Boolean);
   const cw = Math.min(width * 0.56, 230);
+  const bb = room.bingo ? room.bingoBoard : null;
+  const [viewing, setViewing] = useState(me); // bingo: whose card is shown
   return (
     <Screen>
       <Bar onBack={nav.back} title="Squad results" />
@@ -349,7 +429,17 @@ function Results({ room }: { room: RoomView }) {
           )}
           {winners.length > 0 && <T style={{ fontFamily: F.bodyBold, color: C.inkSoft }}>{top} points</T>}
         </View>
-        {best && (
+        {bb && room.grid && (
+          <View style={{ gap: 10 }}>
+            <Label style={{ textAlign: 'center' }}>
+              {viewing === me ? 'Your card' : `${nameOf(viewing)}'s card`} · {bb.lines[viewing] ?? 0} {(bb.lines[viewing] ?? 0) === 1 ? 'line' : 'lines'}
+              {bb.first === viewing ? ' · first BINGO' : ''}
+            </Label>
+            <BingoCard grid={room.grid} cards={all.filter((c) => c.playerId === viewing)} />
+            {room.players.length > 1 && <Mono style={{ textAlign: 'center' }}>Tap a player to see their card</Mono>}
+          </View>
+        )}
+        {best && !bb && (
           <View style={{ alignItems: 'center', gap: 10 }}>
             <Label>Find of the game · {best.playerId === me || (!best.playerId && best.playerName === room.players.find((p) => p.id === me)?.name) ? 'You' : best.playerName}</Label>
             <GameCard card={best} width={cw} />
@@ -360,8 +450,16 @@ function Results({ room }: { room: RoomView }) {
             const theirs = all.filter((c) => (c.playerId ? c.playerId === p.id : c.playerName === p.name));
             const bestCard = (room.best?.[p.id] && cardById.get(room.best[p.id])) || [...theirs].sort((a, b) => b.points - a.points)[0];
             const won = roundsWon(p.id);
+            const lines = bb?.lines[p.id] ?? 0;
             return (
-              <View key={p.id} style={[styles.rank, winners.includes(p.id) && { backgroundColor: C.card }]}>
+              <Pressable
+                key={p.id}
+                disabled={!bb}
+                accessibilityRole={bb ? 'button' : undefined}
+                accessibilityLabel={bb ? `Show ${p.name}'s card` : undefined}
+                onPress={() => setViewing(p.id)}
+                style={[styles.rank, winners.includes(p.id) && { backgroundColor: C.card }, bb && viewing === p.id && { borderColor: C.blaze }]}
+              >
                 <Mono style={{ width: 22, color: C.ink, fontSize: 16 }}>{i + 1}</Mono>
                 <Avatar id={p.id} name={p.name} size={32} />
                 <View style={{ flex: 1, minWidth: 0 }}>
@@ -370,13 +468,19 @@ function Results({ room }: { room: RoomView }) {
                     {p.id === me ? ' (you)' : ''}
                   </T>
                   <Mono style={{ marginTop: 2 }}>
-                    {theirs.length} {theirs.length === 1 ? 'find' : 'finds'}
-                    {won.length ? ` · won round ${won.join(', ')}` : ''}
+                    {bb
+                      ? `${theirs.length} of 9 · ${lines} ${lines === 1 ? 'line' : 'lines'}${bb.first === p.id ? ' · first BINGO' : ''}`
+                      : room.impostor
+                        ? (() => {
+                            const t = impostorTally(room, p.id);
+                            return `${theirs.length} ${theirs.length === 1 ? 'find' : 'finds'} · spotted ${t.spotted}${t.fooled ? ` · fooled ${t.fooled}` : ''}`;
+                          })()
+                        : `${theirs.length} ${theirs.length === 1 ? 'find' : 'finds'}${won.length ? ` · won round ${won.join(', ')}` : ''}`}
                   </Mono>
                 </View>
                 {bestCard && <GameCard card={bestCard} width={44} flat live={false} />}
                 <Text style={{ fontFamily: F.display, fontSize: 26, color: C.ink, fontVariant: ['tabular-nums'], minWidth: 40, textAlign: 'right' }}>{p.score}</Text>
-              </View>
+              </Pressable>
             );
           })}
         </View>
@@ -402,6 +506,7 @@ const styles = StyleSheet.create({
   tile: { width: 62, height: 80, borderRadius: 12, borderWidth: 2, borderColor: C.ink, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center', boxShadow: `0px 4px 0px ${C.ink}` },
   player: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, borderWidth: 2, borderColor: C.line },
+  mode: { flex: 1, height: 38, borderRadius: 999, borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   track: { height: 12, borderRadius: 999, backgroundColor: C.paperDeep, marginTop: 6, overflow: 'hidden', borderWidth: 2, borderColor: C.ink },
   pchip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 12, borderRadius: 999, borderWidth: 2, borderColor: C.ink },
   locked: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, height: 58, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed', borderColor: C.ink },

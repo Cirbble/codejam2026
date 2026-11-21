@@ -6,6 +6,8 @@ import { useCameraPermissions } from 'expo-camera';
 import { BoardRow, cap, fetchBoard, type RoomView } from '../api';
 import { EmptySlot, GameCard } from '../components/GameCard';
 import { Bar, Button, H, Label, Mono, Screen, T } from '../components/ui';
+import { HowToLink, HowToSheet, useHowTo } from '../components/HowTo';
+import { clock } from '../components/squadBits';
 import { useNav } from '../nav';
 import { useSquad } from '../squad';
 import { C, F, TIERS } from '../theme';
@@ -36,8 +38,10 @@ export function SoloStart() {
   }, [squad.error]);
   const t = team.trim().replace(/\s+/g, ' ').slice(0, 24);
   const n = name.trim().slice(0, 16) || t;
+  const howto = useHowTo('quick');
   return (
     <Screen>
+      <HowToSheet k={howto.open} onClose={howto.close} />
       <Bar onBack={nav.back} title="Quick play" right={<Button title="Team board" icon="award" kind="line" onPress={() => nav.push({ name: 'board' })} style={{ height: 44, paddingHorizontal: 12, borderRadius: 13 }} />} />
       <ScrollView contentContainerStyle={{ gap: 22, paddingTop: 8 }} keyboardShouldPersistTaps="handled">
         <View style={styles.rules}>
@@ -45,6 +49,7 @@ export function SoloStart() {
             3 rounds. 60 seconds each.
           </H>
         </View>
+        <HowToLink onPress={howto.show} />
         <View style={{ gap: 8 }}>
           <Label>Team</Label>
           <TextInput value={team} onChangeText={(v) => { squad.clearError(); setTeam(v); }} placeholder="Team name" placeholderTextColor={C.faint} maxLength={24} autoCapitalize="words" style={styles.input} />
@@ -91,6 +96,48 @@ export function SoloStart() {
   );
 }
 
+/** Who the ghost is, as the player should read it. */
+const ghostName = (room: RoomView) => (room.ghost && room.team && room.ghost.team.toLowerCase() === room.team.toLowerCase() ? "Your team's best" : (room.ghost?.team ?? ''));
+
+/**
+ * Ghost race, under the Quick play timer: when today's top run found its item this round, a running score
+ * against it, and a marker on the round's timeline that the elapsed bar catches up to.
+ */
+export function GhostBar({ room, left, span }: { room: RoomView; left: number; span: number }) {
+  const g = room.ghost;
+  if (!g) return null;
+  const split = g.splits[room.round - 1] ?? null;
+  const elapsed = Math.max(0, Math.min(span, span - left));
+  const passed = !!split && elapsed >= split.ms;
+  const name = ghostName(room);
+  const mine = room.players[0]?.score ?? 0; // points land at each reveal, so this is through last round
+  const theirs = g.splits.slice(0, room.round - 1).reduce((n, s) => n + (s?.points ?? 0), 0);
+  return (
+    <View style={[styles.ghost, passed && { borderColor: C.blaze }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Feather name="flag" size={15} color={passed ? C.blaze : C.inkSoft} />
+        <T numberOfLines={1} style={{ flex: 1, fontFamily: F.bodyBold, fontSize: 14 }}>
+          Racing {name}
+        </T>
+        <Mono numberOfLines={1} style={{ color: C.ink, flexShrink: 1 }}>
+          You {mine} · {name === "Your team's best" ? 'Best' : g.team} {theirs}
+        </Mono>
+      </View>
+      <View style={styles.ghostTrack}>
+        <View style={{ width: `${(elapsed / span) * 100}%`, height: '100%', backgroundColor: passed ? C.blaze : C.inkSoft, opacity: 0.35, borderRadius: 999 }} />
+        {split && <View style={[styles.ghostMark, { left: `${(split.ms / span) * 100}%`, backgroundColor: passed ? C.blaze : C.ink }]} />}
+      </View>
+      <Mono style={{ color: passed ? C.blaze : C.inkSoft }}>
+        {!split
+          ? `${name} missed this one. Any find puts you ahead.`
+          : passed
+            ? `${name} had theirs by ${clock(split.ms)} (+${split.points})`
+            : `${name} found theirs at ${clock(split.ms)}`}
+      </Mono>
+    </View>
+  );
+}
+
 export function SoloResults({ room }: { room: RoomView }) {
   const nav = useNav();
   const squad = useSquad();
@@ -120,6 +167,18 @@ export function SoloResults({ room }: { room: RoomView }) {
               {room.team} is #{room.boardRank} on the board
             </T>
           ) : null}
+          {room.ghost && (
+            <View style={[styles.ghostResult, (me?.score ?? 0) > room.ghost.score && { backgroundColor: C.blaze, borderColor: C.blaze }]}>
+              <Feather name="flag" size={16} color={(me?.score ?? 0) > room.ghost.score ? C.white : C.ink} />
+              <T style={{ fontFamily: F.bodyBold, color: (me?.score ?? 0) > room.ghost.score ? C.white : C.ink }}>
+                {(() => {
+                  const d = (me?.score ?? 0) - room.ghost!.score;
+                  const who = ghostName(room);
+                  return d > 0 ? `You beat ${who} by ${d}` : d === 0 ? `Tied with ${who} (${room.ghost!.score})` : `${-d} behind ${who} (${room.ghost!.score})`;
+                })()}
+              </T>
+            </View>
+          )}
         </View>
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 10 }}>
           {room.rounds.map((r, i) => {
@@ -213,4 +272,8 @@ const styles = StyleSheet.create({
   input: { height: 58, borderRadius: 16, borderWidth: 2, borderColor: C.ink, backgroundColor: C.card, paddingHorizontal: 18, fontFamily: F.bodyMid, fontSize: 18, color: C.ink },
   miss: { borderRadius: 12, borderWidth: 2, borderStyle: 'dashed', borderColor: C.faint, alignItems: 'center', justifyContent: 'center', backgroundColor: C.paperDeep },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 2, borderColor: C.ink },
+  ghost: { gap: 8, padding: 12, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed', borderColor: C.line, marginTop: 12 },
+  ghostTrack: { height: 10, borderRadius: 999, backgroundColor: C.paperDeep, justifyContent: 'center' },
+  ghostMark: { position: 'absolute', width: 14, height: 14, marginLeft: -7, borderRadius: 7, borderWidth: 2, borderColor: C.paper },
+  ghostResult: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, paddingHorizontal: 14, height: 40, borderRadius: 999, borderWidth: 2, borderColor: C.ink },
 });

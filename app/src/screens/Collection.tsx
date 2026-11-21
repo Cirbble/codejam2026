@@ -1,8 +1,9 @@
+import { Feather } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, Share, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { Card, fetchCollection, peekCollection, rarityLine, SITE } from '../api';
+import { FlatList, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Card, CardSet, fetchCollection, peekCollection, peekSets, rarityLine, SITE } from '../api';
 import { shareText } from '../share';
-import { GameCard } from '../components/GameCard';
+import { EmptySlot, GameCard } from '../components/GameCard';
 import { Bar, Button, H, Mono, Screen, T, tap } from '../components/ui';
 import { useNav } from '../nav';
 import { C, F, Tier, TIER_ORDER, TIERS } from '../theme';
@@ -13,11 +14,17 @@ export function Collection() {
   const [cards, setCards] = useState<Card[] | null>(peekCollection);
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState<Tier | null>(null);
+  const [sets, setSets] = useState<CardSet[] | null>(peekSets);
+  const [tab, setTab] = useState<'cards' | 'sets'>('cards');
   useEffect(() => {
     fetchCollection()
-      .then(setCards)
+      .then((c) => {
+        setCards(c);
+        setSets(peekSets());
+      })
       .catch(() => setFailed(true));
   }, []);
+  const setsDone = sets?.filter((s) => s.done).length ?? 0;
   const counts = useMemo(() => {
     const c: Record<Tier, number> = { one: 0, epic: 0, rare: 0, uncommon: 0, common: 0 };
     for (const k of cards ?? []) c[k.tier]++;
@@ -40,6 +47,31 @@ export function Collection() {
   return (
     <Screen>
       <Bar onBack={nav.back} title="Cards" right={<Mono style={{ width: 44, textAlign: 'right', color: C.ink, fontSize: 15 }}>{cards?.length ?? ''}</Mono>} />
+      {sets && (
+        <View style={styles.tabs}>
+          {(['cards', 'sets'] as const).map((k) => {
+            const on = tab === k;
+            return (
+              <Pressable
+                key={k}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: on }}
+                onPress={() => {
+                  tap();
+                  setTab(k);
+                }}
+                style={[styles.tab, on && { backgroundColor: C.ink }]}
+              >
+                <Text style={{ fontFamily: F.bodyBold, fontSize: 15, color: on ? C.white : C.ink }}>{k === 'cards' ? 'All cards' : `Sets · ${setsDone}/${sets.length}`}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+      {tab === 'sets' && sets ? (
+        <SetList sets={sets} onCard={(card) => nav.push({ name: 'card', card })} />
+      ) : (
+        <>
       {cards && cards.length > 0 && (
         <View style={styles.filters}>
           {TIER_ORDER.map((t) => {
@@ -97,7 +129,51 @@ export function Collection() {
           )}
         />
       )}
+        </>
+      )}
     </Screen>
+  );
+}
+
+/** Collection sets: each set's slots, filled with your best matching card or left empty with what it needs. */
+function SetList({ sets, onCard }: { sets: CardSet[]; onCard: (c: Card) => void }) {
+  const { width } = useWindowDimensions();
+  // done sets last, then the closest to done first
+  const order = [...sets].sort((a, b) => Number(a.done) - Number(b.done) || b.have / b.slots.length - a.have / a.slots.length);
+  const tw = Math.min(64, (Math.min(width, 520) - 40 - 28 - 8 * 5) / 6);
+  return (
+    <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+      {order.map((s) => (
+        <View key={s.id} style={[styles.set, s.done && { backgroundColor: C.card, borderColor: C.blaze }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <T style={{ fontFamily: F.bodyBold, fontSize: 17 }}>{s.name}</T>
+              <Mono>{s.blurb}</Mono>
+            </View>
+            {s.done ? (
+              <View style={styles.doneBadge}>
+                <Feather name="award" size={14} color={C.white} />
+                <Text style={{ fontFamily: F.bodyBold, fontSize: 13, color: C.white }}>Complete</Text>
+              </View>
+            ) : (
+              <Text style={{ fontFamily: F.display, fontSize: 20, color: C.ink, fontVariant: ['tabular-nums'] }}>
+                {s.have}/{s.slots.length}
+              </Text>
+            )}
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {s.slots.map((slot) => (
+              <View key={slot.name} style={{ width: tw, gap: 3, alignItems: 'center' }}>
+                {slot.card ? <GameCard card={slot.card} width={tw} flat live={false} onPress={() => onCard(slot.card!)} /> : <EmptySlot width={tw} />}
+                <Text numberOfLines={2} style={{ fontFamily: F.bodyMid, fontSize: 11, lineHeight: 13, textAlign: 'center', color: slot.card ? C.ink : C.inkSoft }}>
+                  {slot.name}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ))}
+    </ScrollView>
   );
 }
 
@@ -143,6 +219,10 @@ export function CardView({ card }: { card: Card }) {
 
 const styles = StyleSheet.create({
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  tabs: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 999, borderWidth: 2, borderColor: C.ink, marginBottom: 14 },
+  tab: { flex: 1, height: 38, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  set: { gap: 12, padding: 14, borderRadius: 18, borderWidth: 2, borderColor: C.line },
+  doneBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 30, paddingHorizontal: 10, borderRadius: 999, backgroundColor: C.blaze },
   filter: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 12, borderRadius: 999, borderWidth: 2 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   count: { position: 'absolute', top: 40, right: 14, minWidth: 30, height: 26, paddingHorizontal: 7, borderRadius: 13, backgroundColor: C.ink, borderWidth: 2, borderColor: C.paper, alignItems: 'center', justifyContent: 'center' },

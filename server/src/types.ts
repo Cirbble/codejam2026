@@ -30,7 +30,10 @@ export type Prompt = { id: string; text: string; examples?: string };
 /** Internal prompt record: `cat` keeps a day or a squad game from repeating a category. */
 export type PromptDef = Prompt & { cat: string };
 
-export type Phase = 'lobby' | 'countdown' | 'hunting' | 'reveal' | 'ended';
+/** Ghost race: a Quick play run to race, with when (ms into each round) its find landed and what it scored. */
+export type Ghost = { team: string; score: number; splits: ({ ms: number; points: number } | null)[] };
+
+export type Phase ='lobby' | 'countdown' | 'hunting' | 'reveal' | 'ended';
 
 export type RoomView = {
   code: string;
@@ -49,7 +52,35 @@ export type RoomView = {
   /** ended solo room only: whether this run counted for the team (first 3 per team per phone), and counted runs left on this phone */
   counted: boolean | null;
   runsLeft: number | null;
+  /** null in bingo: every square is open at once (see grid) */
   prompt: Prompt | null;
+  /** bingo squad: one 3x3 card of prompts against one clock */
+  bingo: boolean;
+  /** unique only (squad rounds): a find whose label someone else in the squad also found that round scores 0 */
+  unique: boolean;
+  /**
+   * impostor squads only (null otherwise). Built per player: `you` and `crewPrompt` reach only this round's
+   * impostor (whose `prompt` is the twin). rounds: per finished round, the result once its vote has closed.
+   */
+  impostor: {
+    you: boolean;
+    crewPrompt: Prompt | null;
+    voteOpen: boolean;
+    voted: string[];
+    myVote: string | null;
+    minPlayers: number;
+    spotBonus: number;
+    foolBonus: number;
+    rounds: ({ impostorId: string; twin: Prompt; caught: boolean; votes: Record<string, string> } | null)[];
+  } | null;
+  /** solo only: today's best run to race (same prompts), or null when nobody has played yet today */
+  ghost: Ghost | null;
+  /** length of a hunt in ms (for the timer bar) */
+  huntMs: number;
+  /** bingo, after the lobby: the 9 prompts, row by row */
+  grid: Prompt[] | null;
+  /** bingo, after the lobby: marked promptIds and completed lines per playerId, and who completed a line first */
+  bingoBoard: { marks: Record<string, string[]>; lines: Record<string, number>; first: string | null; lineBonus: number; firstBonus: number } | null;
   endsAt: number | null;
   /** reveal only: this reveal's length in ms (6 s + 3 s per card, max 20 s); null otherwise */
   revealMs: number | null;
@@ -68,7 +99,7 @@ export type ErrorCode = 'rate' | 'locked' | 'closed' | 'budget' | 'ai_down' | 'b
 export type RejectReason = 'no_match' | 'screen' | 'unclear';
 
 export type FindBody =
-  | { accepted: true; card: Card }
+  | { accepted: true; card: Card; /** collection sets this find completed */ setsDone?: { id: string; name: string }[] }
   | { accepted: false; reason: RejectReason; verdict: string; triesLeft?: number }
   | { error: ErrorCode; message: string; retryAfterMs?: number };
 
@@ -79,7 +110,8 @@ export type ClientMsg =
   | { t: 'create'; name: string; quick?: boolean; device: string; op?: string; solo?: boolean; team?: string }
   | { t: 'join'; code: string; name: string; device: string; op?: string }
   | { t: 'resume'; code: string; playerId: string; secret: string }
-  | { t: 'settings'; quick: boolean }
+  | { t: 'settings'; quick?: boolean; bingo?: boolean; unique?: boolean; impostor?: boolean }
+  | { t: 'vote'; target: string }
   | { t: 'start' }
   | { t: 'skip' }
   | { t: 'again' }

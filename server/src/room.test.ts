@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COUNTDOWN_MS, HUNT_MS, MAX_TRIES, QUICK_HUNT_MS, REVEAL_MAX_MS as REVEAL_MS, Room, LOBBY_IDLE_MS, revealMsFor } from './room.js';
+import { IMPOSTOR_FOOL_BONUS, IMPOSTOR_RESULT_MS, IMPOSTOR_SPOT_BONUS, IMPOSTOR_VOTE_MS, BINGO_FIRST_BONUS, BINGO_HUNT_MS, BINGO_LINE_BONUS, BINGO_QUICK_HUNT_MS, BINGO_REVEAL_MS, COUNTDOWN_MS, HUNT_MS, MAX_TRIES, QUICK_HUNT_MS, REVEAL_MAX_MS as REVEAL_MS, Room, LOBBY_IDLE_MS, revealMsFor } from './room.js';
 import { scoreFind, scoreSolo, tierFor, normalizeLabel, canonicalLabel } from './rarity.js';
-import { INDOOR, OUTDOOR, dailyPrompts, soloPrompts, squadPrompts, seeded, torontoDay, nextTorontoMidnight, QUICK_OPENER } from './prompts.js';
+import { TWINS, INDOOR, OUTDOOR, dailyPrompts, soloPrompts, squadPrompts, seeded, torontoDay, nextTorontoMidnight, QUICK_OPENER } from './prompts.js';
 import type { Card, PromptDef } from './types.js';
 
 // ---------- fake clock ----------
@@ -734,4 +734,389 @@ test('upload grace: a shutter press before the buzzer lets the upload land up to
   const t0 = now();
   while (room.phase === 'reveal' && now() - t0 < 60_000) advance(250);
   assert.ok(now() - t0 >= 25_000 && now() - t0 < 27_000, `held ${now() - t0} ms`);
+});
+
+// ---------- unique only ----------
+test('unique only: a find someone else matched that round scores 0; the round goes to the best unique card', () => {
+  const { room, ps, advance } = setup(false, 3);
+  assert.equal(room.setUnique(ps[1].id, true), false, 'only the host');
+  assert.equal(room.setUnique(ps[0].id, true), true);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  find(room, ps[0].id, 'a', 'fire hydrant', 85, 90);
+  find(room, ps[1].id, 'b', 'fire hydrant', 85, 90);
+  find(room, ps[2].id, 'c', 'red cardinal', 30, 50);
+  assert.equal(room.phase, 'reveal', 'everyone found');
+  const score = (i: number) => room.players.get(ps[i].id)!.score;
+  assert.deepEqual([score(0), score(1), score(2)], [0, 0, 30]);
+  assert.equal(room.view().reveal!.find((c) => c.label === 'fire hydrant')!.sameAs!.length, 1, 'the duplicate is marked');
+  assert.equal(room.view().roundWinners[0], ps[2].id, 'the unique card wins the round');
+  assert.equal(room.view().unique, true);
+});
+
+test('unique only: a late duplicate in the reveal cancels the earlier card too', () => {
+  const { room, ps, advance } = setup(false, 2);
+  room.setUnique(ps[0].id, true);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  find(room, ps[0].id, 'a', 'bench', 60, 70);
+  advance(HUNT_MS - 1000);
+  const pre = room.precheck(ps[1].id, 'late');
+  assert.equal(pre.kind, 'ok');
+  advance(1000);
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.players.get(ps[0].id)!.score, 60);
+  room.settle(ps[1].id, 'late', 1, { accepted: true }, () => card('bench', 'P1', 60, 70, ps[1].id));
+  assert.equal(room.players.get(ps[0].id)!.score, 0, 'now a duplicate');
+  assert.equal(room.players.get(ps[1].id)!.score, 0);
+});
+
+test('unique only and bingo are separate modes; unique survives a restore', () => {
+  const { room, ps, now } = setup(false, 1);
+  room.setUnique(ps[0].id, true);
+  room.setBingo(ps[0].id, true);
+  assert.deepEqual([room.unique, room.bingo], [false, true], 'bingo turns unique off');
+  room.setUnique(ps[0].id, true);
+  assert.deepEqual([room.unique, room.bingo], [true, false], 'and the other way round');
+  const back = Room.restore(JSON.parse(JSON.stringify(room.snapshot())), now, (q) => squadPrompts(q, seeded('test')));
+  assert.equal(back.unique, true);
+  const solo = new Room('SOLU', true, () => 0, () => [], { solo: true, team: 'T', unique: true });
+  assert.equal(solo.unique, false, 'solo runs are never unique');
+});
+
+// ---------- impostor ----------
+function setupImpostor(n = 3, rand = () => 0) {
+  const clock = { t: 1_800_000_000_000 };
+  const now = () => clock.t;
+  const room = new Room('IMPO', false, now, (q, count, twins) => squadPrompts(q, seeded('imp'), count, twins), { rand });
+  const ps = Array.from({ length: n }, (_, i) => room.addPlayer(`P${i}`, `device${i}`.padEnd(32, '0')));
+  const advance = (ms: number, step = 250) => {
+    for (let t = 0; t < ms; t += step) {
+      clock.t += step;
+      room.tick();
+    }
+  };
+  assert.equal(room.setImpostor(ps[0].id, true), true);
+  return { room, ps, clock, advance, now };
+}
+
+test('impostor: needs 3 players; only twin-able prompts; one player per round sees the twin, nobody else learns who', () => {
+  const small = setupImpostor(2);
+  assert.equal(small.room.start(small.ps[0].id), false, 'two players is too few');
+  const { room, ps, advance } = setupImpostor(3, () => 0.99);
+  assert.equal(room.start(ps[0].id), true);
+  assert.ok(room.prompts.every((p) => TWINS[p.id]), 'every round prompt has a twin');
+  advance(COUNTDOWN_MS);
+  const imp = room.impostorId!;
+  assert.ok(imp);
+  const views = ps.map((p) => room.view(p.id));
+  const real = room.prompts[0];
+  for (const [i, v] of views.entries()) {
+    if (ps[i].id === imp) {
+      assert.equal(v.prompt!.id, TWINS[real.id].id, 'the impostor sees the twin');
+      assert.equal(v.impostor!.you, true);
+      assert.equal(v.impostor!.crewPrompt!.id, real.id, 'and the real prompt, to blend in');
+    } else {
+      assert.equal(v.prompt!.id, real.id);
+      assert.equal(v.impostor!.you, false);
+      assert.equal(v.impostor!.crewPrompt, null);
+    }
+  }
+  assert.equal(JSON.stringify(room.view()).includes(TWINS[real.id].text), false, 'the shared view never carries the twin');
+  // the impostor's find is judged against the twin
+  const pre = room.precheck(imp, 'imp-find');
+  assert.equal(pre.kind === 'ok' && pre.prompt.id, TWINS[real.id].id);
+});
+
+test('impostor: vote, scoring and a masked reveal; the impostor rotates', () => {
+  const { room, ps, advance } = setupImpostor(4);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const imp = room.impostorId!;
+  const crew = ps.filter((p) => p.id !== imp);
+  for (const p of ps) find(room, p.id, `f-${p.id}`, `thing ${p.name}`, 30, 50);
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.voteOpen, true);
+  const real = room.prompts[0];
+  const rv = room.view(crew[0].id);
+  assert.ok(rv.reveal!.every((c) => c.promptId === real.id && c.verdict === ''), 'every card wears the real prompt during the vote');
+  assert.equal(JSON.stringify(rv).includes(TWINS[real.id].text), false);
+  assert.equal(room.players.get(crew[0].id)!.score, 0, 'points wait for the vote');
+  assert.equal(room.vote(crew[0].id, crew[0].id), false, 'no self votes');
+  // two crew spot the impostor, one is fooled; the impostor votes for a crew member
+  room.vote(crew[0].id, imp);
+  room.vote(crew[1].id, imp);
+  room.vote(crew[2].id, crew[0].id);
+  assert.equal(room.voteOpen, true);
+  assert.deepEqual(room.view(crew[0].id).impostor!.voted.sort(), [crew[0].id, crew[1].id, crew[2].id].sort());
+  room.vote(imp, crew[0].id); // everyone has voted: closes
+  assert.equal(room.voteOpen, false);
+  const res = room.view(crew[2].id).impostor!.rounds[0]!;
+  assert.equal(res.impostorId, imp);
+  assert.equal(res.caught, false, 'a 2-2 tie lets the impostor slip away');
+  assert.equal(res.twin.id, TWINS[real.id].id);
+  assert.equal(room.players.get(crew[0].id)!.score, 30 + IMPOSTOR_SPOT_BONUS);
+  assert.equal(room.players.get(crew[2].id)!.score, 30);
+  assert.equal(room.players.get(imp)!.score, 30 + IMPOSTOR_FOOL_BONUS);
+  assert.equal(room.view().reveal!.find((c) => c.playerId === imp)!.promptId, 'x', 'unmasked after the vote (the test card keeps its own promptId)');
+  advance(IMPOSTOR_RESULT_MS);
+  assert.equal(room.phase, 'hunting');
+  assert.equal(room.round, 2);
+  assert.notEqual(room.impostorId, imp, 'a different impostor next round');
+});
+
+test('impostor: caught when they alone get the most votes; the vote closes on its timer', () => {
+  const { room, ps, advance } = setupImpostor(3);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const imp = room.impostorId!;
+  const crew = ps.filter((p) => p.id !== imp);
+  room.skip(ps[0].id); // nobody found anything: straight to the vote
+  room.vote(crew[0].id, imp);
+  room.vote(crew[1].id, imp);
+  advance(IMPOSTOR_VOTE_MS);
+  assert.equal(room.voteOpen, false, 'closed by the clock');
+  assert.equal(room.impostorResult(0).caught, true);
+  assert.equal(room.players.get(imp)!.score, 0);
+  assert.equal(room.players.get(crew[0].id)!.score, IMPOSTOR_SPOT_BONUS);
+  // host skip closes the vote early too
+  advance(IMPOSTOR_RESULT_MS);
+  room.skip(ps[0].id);
+  assert.equal(room.voteOpen, true);
+  room.skip(ps[0].id);
+  assert.equal(room.voteOpen, false);
+});
+
+test('impostor: survives a restore mid-vote; modes stay exclusive', () => {
+  const { room, ps, advance, now } = setupImpostor(3);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const imp = room.impostorId!;
+  room.skip(ps[0].id);
+  room.vote(ps.find((p) => p.id !== imp)!.id, imp);
+  const back = Room.restore(JSON.parse(JSON.stringify(room.snapshot())), now, (q, n, t) => squadPrompts(q, seeded('imp'), n, t));
+  assert.equal(back.impostor, true);
+  assert.equal(back.voteOpen, true);
+  assert.equal(back.impostorId, imp);
+  assert.equal(Object.keys(back.votes[0]).length, 1);
+  const m = setupImpostor(3).room;
+  const host = [...m.players.keys()][0];
+  m.setBingo(host, true);
+  assert.deepEqual([m.bingo, m.unique, m.impostor], [true, false, false]);
+  m.setImpostor(host, true);
+  assert.deepEqual([m.bingo, m.unique, m.impostor], [false, false, true]);
+});
+
+// ---------- bingo ----------
+function setupBingo(quick = false, n = 2) {
+  const clock = { t: 1_800_000_000_000 };
+  const now = () => clock.t;
+  const room = new Room('BNGO', quick, now, (q, count) => squadPrompts(q, seeded('bingo'), count));
+  const ps = Array.from({ length: n }, (_, i) => room.addPlayer(`P${i}`, `device${i}`.padEnd(32, '0')));
+  const advance = (ms: number, step = 250) => {
+    for (let t = 0; t < ms; t += step) {
+      clock.t += step;
+      room.tick();
+    }
+  };
+  assert.equal(room.setBingo(ps[0].id, true), true);
+  return { room, ps, clock, advance, now };
+}
+
+function bingoFind(room: Room, playerId: string, sub: string, promptId: string | undefined, label: string | null, pts = 10) {
+  const pre = room.precheck(playerId, sub, promptId);
+  if (pre.kind !== 'ok') return pre.reply;
+  const name = room.players.get(playerId)!.name;
+  return room.settle(
+    playerId,
+    sub,
+    pre.round,
+    label ? { accepted: true } : { accepted: false, reason: 'no_match', verdict: 'Not quite.' },
+    () => ({ ...card(label!, name, pts, 20, playerId), promptId: pre.prompt.id, promptText: pre.prompt.text }),
+    pre.prompt.id,
+  );
+}
+
+test('bingo: host-only lobby setting; one round on a 3x3 grid of distinct categories, 5 min clock', () => {
+  const { room, ps, advance, now } = setupBingo();
+  assert.equal(room.setBingo(ps[1].id, false), false, 'only the host');
+  assert.equal(room.view().grid, null, 'no grid in the lobby');
+  assert.equal(room.start(ps[0].id), true);
+  advance(COUNTDOWN_MS);
+  assert.equal(room.phase, 'hunting');
+  assert.equal(room.endsAt, now() + BINGO_HUNT_MS);
+  const v = room.view();
+  assert.equal(v.bingo, true);
+  assert.equal(v.totalRounds, 1);
+  assert.equal(v.prompt, null, 'no single prompt: the whole grid is open');
+  assert.equal(v.grid!.length, 9);
+  assert.equal(new Set(room.prompts.map((p) => p.cat)).size, 9, 'every square is a different category');
+  assert.equal(room.setBingo(ps[0].id, false), false, 'locked once started');
+  advance(BINGO_HUNT_MS);
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.view().rounds.length, 9, 'one finished entry per square');
+  advance(BINGO_REVEAL_MS);
+  assert.equal(room.phase, 'ended');
+});
+
+test('bingo: quick mode uses the indoor pool and a 3 min clock; solo rooms cannot be bingo', () => {
+  const { room, ps, advance, now } = setupBingo(true);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  assert.equal(room.endsAt, now() + BINGO_QUICK_HUNT_MS);
+  assert.ok(room.prompts.every((p) => INDOOR.includes(p)));
+  const solo = new Room('SOLB', true, () => 0, () => [], { solo: true, team: 'T', bingo: true });
+  assert.equal(solo.bingo, false);
+  assert.equal(solo.setBingo(solo.addPlayer('A', 'd'.repeat(32)).id, true), false);
+});
+
+test('bingo: one find per square, tries per square, the square must be on the card', () => {
+  const { room, ps, advance } = setupBingo();
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const [a, b] = room.prompts;
+  assert.equal(room.precheck(ps[0].id, 's0').kind, 'error', 'bingo needs a square');
+  assert.equal(room.precheck(ps[0].id, 's1', 'not-on-card').kind, 'error');
+  assert.equal((bingoFind(room, ps[0].id, 's2', a.id, 'apple').body as any).accepted, true);
+  assert.equal((bingoFind(room, ps[0].id, 's3', a.id, 'brick').body as any).error, 'locked', 'square already marked');
+  assert.equal((bingoFind(room, ps[0].id, 's4', b.id, 'bench').body as any).accepted, true, 'another square is open');
+  for (let i = 0; i < MAX_TRIES; i++) bingoFind(room, ps[1].id, `miss${i}`, a.id, null);
+  assert.equal(room.triesLeft(ps[1].id, a.id), 0);
+  assert.equal(room.triesLeft(ps[1].id, b.id), MAX_TRIES, 'tries are per square');
+  assert.equal((bingoFind(room, ps[1].id, 'x', b.id, 'bench').body as any).accepted, true);
+  const v = room.view();
+  assert.deepEqual(v.bingoBoard!.marks[ps[0].id], [a.id, b.id]);
+  assert.equal(v.reveal, null, 'no cards mid-hunt');
+  assert.equal(v.players.find((p) => p.id === ps[0].id)!.found, false, 'found means the whole card is done');
+});
+
+test('bingo: lines score a bonus and the first line gets the first-bingo bonus', () => {
+  const { room, ps, advance } = setupBingo();
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const g = room.prompts.map((p) => p.id);
+  // P1 marks the left column (0,3,6) first; P0 then finishes the top row (0,1,2) and the diagonal (0,4,8)
+  bingoFind(room, ps[1].id, 'b0', g[0], 'x', 10);
+  bingoFind(room, ps[1].id, 'b3', g[3], 'x', 10);
+  bingoFind(room, ps[1].id, 'b6', g[6], 'x', 10);
+  bingoFind(room, ps[1].id, 'b8', g[8], 'epic', 85); // on no completed line of P1's: scores nothing
+  for (const i of [0, 1, 2, 4, 8]) bingoFind(room, ps[0].id, `a${i}`, g[i], 'y', 30);
+  const v = room.view().bingoBoard!;
+  assert.equal(v.lines[ps[1].id], 1);
+  assert.equal(v.lines[ps[0].id], 2);
+  assert.equal(v.first, ps[1].id, 'P1 closed a line first');
+  assert.equal(room.players.get(ps[0].id)!.score, 0, 'totals stay hidden until the reveal');
+  room.skip(ps[0].id);
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.players.get(ps[0].id)!.score, 5 * 30 + 2 * BINGO_LINE_BONUS);
+  assert.equal(room.players.get(ps[1].id)!.score, 3 * 10 + BINGO_LINE_BONUS + BINGO_FIRST_BONUS, 'the epic off the line adds nothing');
+  assert.equal(room.view().reveal!.length, 9, 'the reveal shows every card');
+  advance(BINGO_REVEAL_MS);
+  assert.equal(room.phase, 'ended');
+  assert.deepEqual(room.view().winners, [ps[0].id], 'P0 250 beats P1 180');
+});
+
+test('bingo: the hunt ends early once every player has filled the whole card', () => {
+  const { room, ps, advance } = setupBingo(false, 1);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const g = room.prompts.map((p) => p.id);
+  for (let i = 0; i < 8; i++) bingoFind(room, ps[0].id, `f${i}`, g[i], 'z');
+  assert.equal(room.phase, 'hunting');
+  bingoFind(room, ps[0].id, 'f8', g[8], 'z');
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.view().bingoBoard!.lines[ps[0].id], 8, 'a full card is all 8 lines');
+  assert.equal(room.players.get(ps[0].id)!.score, 9 * 10 + 8 * BINGO_LINE_BONUS + BINGO_FIRST_BONUS);
+});
+
+test('bingo: a late upload announced before the buzzer counts for the square it was shot for', () => {
+  const { room, ps, advance } = setupBingo();
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const g = room.prompts.map((p) => p.id);
+  bingoFind(room, ps[0].id, 'm3', g[3], 'cup', 10);
+  bingoFind(room, ps[0].id, 'm5', g[5], 'mug', 10);
+  advance(BINGO_HUNT_MS - 1000);
+  assert.equal(room.markShooting(ps[0].id, g[4]), true);
+  assert.equal(room.markShooting(ps[0].id, 'nope'), false);
+  advance(1000);
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.precheck(ps[0].id, 'wrong-square', g[5]).kind, 'error', 'only the announced square');
+  assert.equal(room.players.get(ps[0].id)!.score, 0, 'two squares, no line yet: nothing scores');
+  assert.equal((bingoFind(room, ps[0].id, 'late', g[4], 'lamp', 60).body as any).accepted, true);
+  assert.equal(room.players.get(ps[0].id)!.score, 10 + 10 + 60 + BINGO_LINE_BONUS + BINGO_FIRST_BONUS, 'the late card completed the middle row');
+});
+
+test('bingo: snapshot and restore keep the mode and the marked squares; again() keeps bingo on', () => {
+  const { room, ps, advance, now } = setupBingo();
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const g = room.prompts.map((p) => p.id);
+  bingoFind(room, ps[0].id, 'r0', g[0], 'kept');
+  const back = Room.restore(JSON.parse(JSON.stringify(room.snapshot())), now, (q, n) => squadPrompts(q, seeded('bingo'), n));
+  assert.equal(back.bingo, true);
+  assert.deepEqual(back.view().bingoBoard!.marks[ps[0].id], [g[0]]);
+  assert.equal((bingoFind(back, ps[0].id, 'r1', g[0], 'again').body as any).error, 'locked');
+  room.skip(ps[0].id);
+  advance(BINGO_REVEAL_MS);
+  assert.equal(room.phase, 'ended');
+  assert.deepEqual(room.view().bingoBoard!.marks[ps[0].id], [g[0]], 'the card survives into the results');
+  room.again(ps[0].id);
+  assert.equal(room.phase, 'lobby');
+  assert.equal(room.bingo, true, 'still bingo for the next game');
+  assert.equal(room.found.size, 0);
+});
+
+test('bingo: a save failure on the find that ended the hunt reopens the hunt', () => {
+  const { room, ps, advance } = setupBingo(false, 1);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const g = room.prompts.map((p) => p.id);
+  for (let i = 0; i < 8; i++) bingoFind(room, ps[0].id, `f${i}`, g[i], 'z');
+  const last = bingoFind(room, ps[0].id, 'f8', g[8], 'z');
+  assert.equal(room.phase, 'reveal');
+  room.unsettle(ps[0].id, 'f8', (last.body as any).card);
+  assert.equal(room.phase, 'hunting');
+  assert.equal(room.rounds.length, 0);
+  assert.equal(room.players.get(ps[0].id)!.score, 0);
+  assert.equal(room.view().bingoBoard!.marks[ps[0].id].length, 8);
+  assert.equal((bingoFind(room, ps[0].id, 'f8', g[8], 'z').body as any).accepted, true, 'the same submission can be sent again');
+});
+
+// ---------- ghost race ----------
+test('ghost: a solo room carries the run to race; its own splits record when each find landed', () => {
+  const clock = { t: 1_800_000_000_000 };
+  const now = () => clock.t;
+  const ghost = { team: 'Nova', score: 90, splits: [{ ms: 20_000, points: 30 }, null, { ms: 41_000, points: 60 }] };
+  const room = new Room('GHST', true, now, (q) => squadPrompts(q, seeded('solo')), { solo: true, team: 'Rocket', ghost });
+  const squad = new Room('SQDG', false, now, (q) => squadPrompts(q, seeded('x')), { ghost });
+  assert.equal(squad.view().ghost, null, 'squads never race a ghost');
+  const p = room.addPlayer('Ava', 'a'.repeat(32));
+  room.start(p.id);
+  const step = (ms: number) => {
+    for (let t = 0; t < ms; t += 250) {
+      clock.t += 250;
+      room.tick();
+    }
+  };
+  step(COUNTDOWN_MS);
+  assert.deepEqual(room.view().ghost, ghost);
+  step(12_000);
+  const pre = room.precheck(p.id, 'r1');
+  room.settle(p.id, 'r1', pre.kind === 'ok' ? pre.round : 0, { accepted: true }, () => ({ ...card('mug', 'Ava', 30, 50, p.id), at: now() }));
+  step(3_000); // the solo reveal
+  while (room.phase !== 'hunting') step(250);
+  step(60_000); // round 2: no find
+  while (room.phase !== 'hunting') step(250);
+  step(5_000);
+  const pre3 = room.precheck(p.id, 'r3');
+  room.settle(p.id, 'r3', pre3.kind === 'ok' ? pre3.round : 0, { accepted: true }, () => ({ ...card('lamp', 'Ava', 60, 70, p.id), at: now() }));
+  const s = room.splits();
+  assert.equal(s.length, 3);
+  assert.deepEqual(s[0], { ms: 12_000, points: 30 });
+  assert.equal(s[1], null, 'a miss');
+  assert.deepEqual(s[2], { ms: 5_000, points: 60 });
+  const back = Room.restore(JSON.parse(JSON.stringify(room.snapshot())), now);
+  assert.deepEqual(back.view().ghost, ghost, 'the ghost survives a restore');
+  assert.deepEqual(back.huntStarts, room.huntStarts);
 });

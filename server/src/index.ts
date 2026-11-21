@@ -12,10 +12,11 @@ import { canonicalLabel, normalizeLabel, scoreFind, scoreSolo, titleFor } from '
 import { dailyPrompts, nextTorontoMidnight, promptById, soloPrompts, squadPrompts, torontoDay } from './prompts.js';
 import { thumbnail, THUMB_W } from './thumbs.js';
 import { DATA_DIR, PHOTO_DIR, byDevice, cards, commitFinds, countFind, peekCounts, markPendingSquad, clearPendingSquad, pendingSquads, releaseUsedPhoto, resetPromptCounts, dailyEntry, dailyEntryMut, daily, dropCardsWithoutPhotos, flushAll, usedPhoto, promptTotals, saveCard, topLabels, writeAtomic } from './store.js';
-import { MAX_TRIES } from './room.js';
+import { IMPOSTOR_MIN_PLAYERS, MAX_TRIES } from './room.js';
 import { Lru } from './lru.js';
 import { dict } from './dict.js';
-import { boardView, displayTeam, hideTeam, recordRun, resetBoard, teamKey } from './board.js';
+import { boardView, displayTeam, ghostFor, hideTeam, recordRun, resetBoard, teamKey } from './board.js';
+import { setProgress, setsCompletedBy } from './sets.js';
 import type { Card, ClientMsg, ErrorCode, FindBody, Prompt, Reply, ServerMsg, WsErrorCode } from './types.js';
 
 const PORT = Number(process.env.PORT || 8787);
@@ -116,7 +117,8 @@ app.get('/api/daily', (req, res) => {
 app.get('/api/collection', (req, res) => {
   const device = req.query.device;
   if (!validDevice(device)) return res.status(400).json({ error: 'bad_request', message: 'Missing device.' });
-  res.json({ cards: cardsOf(device).sort((a, b) => b.at - a.at) });
+  const all = cardsOf(device).sort((a, b) => b.at - a.at);
+  res.json({ cards: all, sets: setProgress(all) });
 });
 
 app.get('/api/board', (_req, res) => {
@@ -203,6 +205,12 @@ app.post('/api/find', async (req, res) => {
       console.error('[find]', e);
       return fail(500, 'ai_down', 'Something went wrong. Try again.');
     }));
+  // a find that completes a collection set says so (computed per request; the stored reply stays as it was)
+  if ('accepted' in out.body && out.body.accepted) {
+    const card = out.body.card;
+    const setsDone = setsCompletedBy(cardsOf(device).filter((c) => c.id !== card.id), card);
+    if (setsDone.length) return res.status(out.status).json({ ...out.body, setsDone });
+  }
   res.status(out.status).json(out.body);
 });
 
@@ -379,7 +387,7 @@ async function squadFind(b: any, device: string, submissionId: string, ip: strin
   if (!room) return fail(409, 'closed', 'That squad is gone.');
   const player = room.auth(b.playerId, b.secret);
   if (!player) return fail(403, 'bad_request', 'Join the squad first.');
-  const pre = room.precheck(player.id, submissionId);
+  const pre = room.precheck(player.id, submissionId, typeof b.promptId === 'string' ? b.promptId : undefined);
   if (pre.kind !== 'ok') return pre.reply;
   if (b.promptId && b.promptId !== pre.prompt.id) {
     room.abort(player.id, submissionId);
@@ -387,7 +395,7 @@ async function squadFind(b: any, device: string, submissionId: string, ip: strin
   }
   if (usedPhoto(pre.prompt.id, player.device || device, hashOf(jpeg))) {
     room.abort(player.id, submissionId);
-    return usedPhotoReply(room.triesLeft(player.id));
+    return usedPhotoReply(room.triesLeft(player.id, pre.prompt.id));
   }
   const rateKey = `${room.code}:${player.id}`; // per squad member: two tabs on one laptop share a device id
   const g = gate(rateKey, ip);
@@ -419,7 +427,7 @@ async function squadFind(b: any, device: string, submissionId: string, ip: strin
         throw e;
       }
       return made.card;
-    });
+    }, pre.prompt.id);
   } catch (err) {
     console.error('[find] save failed', (err as Error).message);
     return SAVE_FAILED();
@@ -490,8 +498,10 @@ function newCode(): string {
 function broadcast(room: Room, force = false) {
   if (!force && sentVersion.get(room.code) === room.version) return;
   sentVersion.set(room.code, room.version);
-  const msg = JSON.stringify({ t: 'state', room: room.view() } satisfies ServerMsg);
-  for (const c of conns) if (c.code === room.code && c.ws.readyState === WebSocket.OPEN) c.ws.send(msg);
+  // impostor games: each player gets their own view (the impostor's prompt is theirs alone)
+  const shared = room.impostor ? null : JSON.stringify({ t: 'state', room: room.view() } satisfies ServerMsg);
+  for (const c of conns)
+    if (c.code === room.code && c.ws.readyState === WebSocket.OPEN) c.ws.send(shared ?? JSON.stringify({ t: 'state', room: room.view(c.playerId) } satisfies ServerMsg));
 }
 function limited(map: Map<string, number[]>, ip: string, max: number) {
   const now = Date.now();
@@ -579,7 +589,7 @@ function activeSoloRun(device: string): Room | undefined {
 const soloIpHits = new Map<string, number[]>();
 const teamHits = new Map<string, number[]>();
 /** Solo runs share one fixed prompt set per Toronto day; squads draw at random. */
-const pickFor = (solo: boolean) => (solo ? () => soloPrompts(torontoDay()) : (q: boolean) => squadPrompts(q));
+const pickFor = (solo: boolean) => (solo ? () => soloPrompts(torontoDay()) : (q: boolean, n: number, twins?: boolean) => squadPrompts(q, Math.random, n, !!twins));
 function windowLimited(map: Map<string, number[]>, key: string, max: number, windowMs: number) {
   const now = Date.now();
   const hits = (map.get(key) ?? []).filter((t) => now - t < windowMs);
@@ -592,7 +602,7 @@ function recordSolo(room: Room) {
   const p = [...room.players.values()][0];
   if (!p || !room.team) return;
   // throws on a board write failure: the room keeps boardRecorded=false and retries (idempotent by runId)
-  room.board = recordRun({ runId: room.runId ?? room.code, team: room.team, playerName: p.name, score: p.score, bestCardId: room.results().best[p.id] ?? null, at: room.endedAt ?? Date.now(), device: p.device });
+  room.board = recordRun({ runId: room.runId ?? room.code, team: room.team, playerName: p.name, score: p.score, bestCardId: room.results().best[p.id] ?? null, at: room.endedAt ?? Date.now(), device: p.device, splits: room.splits() });
 }
 
 function leavePlayer(room: Room, playerId: string) {
@@ -622,7 +632,7 @@ function handle(conn: Conn, m: ClientMsg) {
       }
       if (limited(createHits, conn.ip, LIMITS.CREATE_PER_IP_MIN) || rooms.size >= 1000) throw new WsError('rate', 'Too many new squads. Try again in a minute.');
       const code = newCode();
-      const room = new Room(code, solo || !!m.quick, Date.now, pickFor(solo), { solo, team, onEnd: recordSolo });
+      const room = new Room(code, solo || !!m.quick, Date.now, pickFor(solo), { solo, team, onEnd: recordSolo, ghost: solo ? ghostFor(torontoDay()) : null }); // the ghost: today's best run, same prompts
       rooms.set(code, room);
       const p = room.addPlayer(m.name, validDevice(m.device) ? m.device : '');
       if (solo) {
@@ -675,10 +685,21 @@ function handle(conn: Conn, m: ClientMsg) {
   switch (m.t) {
     case 'start':
       if (room.start(me)) saveRooms();
-      else throw new WsError('other', room.hostId !== me ? 'Only the host can start.' : 'Cannot start now.');
+      else if (room.hostId !== me) throw new WsError('other', 'Only the host can start.');
+      else if (room.impostor && room.players.size < IMPOSTOR_MIN_PLAYERS) throw new WsError('other', `Impostor needs at least ${IMPOSTOR_MIN_PLAYERS} players.`);
+      else throw new WsError('other', 'Cannot start now.');
+      break;
+    case 'vote':
+      if (!room.vote(me, String((m as any).target ?? ''))) throw new WsError('other', 'Voting is closed.');
       break;
     case 'settings':
-      if (!room.setQuick(me, !!m.quick)) throw new WsError('other', 'Only the host can change settings in the lobby.');
+      if (
+        (m.quick !== undefined && !room.setQuick(me, !!m.quick)) ||
+        (m.bingo !== undefined && !room.setBingo(me, !!m.bingo)) ||
+        (m.unique !== undefined && !room.setUnique(me, !!m.unique)) ||
+        (m.impostor !== undefined && !room.setImpostor(me, !!m.impostor))
+      )
+        throw new WsError('other', 'Only the host can change settings in the lobby.');
       break;
     case 'shooting':
       room.markShooting(me, String((m as any).promptId ?? '')); // silent: only extends the upload grace

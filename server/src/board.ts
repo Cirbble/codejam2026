@@ -3,11 +3,13 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { DATA_DIR, cards, writeAtomic } from './store.js';
 import { dict, toDict, type Dict } from './dict.js';
-import type { Card } from './types.js';
+import { torontoDay } from './prompts.js';
+import type { Card, Ghost } from './types.js';
 
 /** People's Choice leaderboard: one solo run per table visit, aggregated per team. Persisted in DATA_DIR/board.json. */
 /** device: the phone that played (stored only as a short hash; device ids are bearer secrets). */
-export type Run = { runId: string; team: string; playerName: string; score: number; bestCardId: string | null; at: number; device?: string };
+/** splits: per round, when the find landed (ms into the hunt) and its points, for the ghost race. */
+export type Run = { runId: string; team: string; playerName: string; score: number; bestCardId: string | null; at: number; device?: string; splits?: Ghost['splits'] };
 /** What a recorded run means for the team: its standing (null for hidden/test teams) and whether this run counted. */
 export type RunResult = { rank: number | null; best: number | null; counted: boolean; runsLeft: number };
 type StoredRun = Omit<Run, 'device'> & { dev?: string; counted?: boolean };
@@ -153,6 +155,21 @@ export function boardView(): {
     lastRun: lastVisibleRun(),
     updatedAt: doc.updatedAt,
   };
+}
+
+/**
+ * Ghost race: the best counted run of `day` (Toronto) by a visible team, with splits. Quick play prompts are fixed
+ * per day, so this run hunted the same three prompts. Ties go to the earlier run. Null when nobody qualifies yet.
+ */
+export function ghostFor(day: string): Ghost | null {
+  let best: StoredRun | null = null;
+  for (const r of doc.runs) {
+    if (r.counted === false || !r.splits || torontoDay(r.at) !== day) continue;
+    const key = teamKey(r.team);
+    if (doc.hidden[key] || isTestTeam(r.team)) continue;
+    if (!best || r.score > best.score) best = r;
+  }
+  return best ? { team: doc.teams[teamKey(best.team)]?.team ?? best.team, score: best.score, splits: best.splits! } : null;
 }
 
 /** The most recent run of a visible team (for the projector to feature whoever just played). */

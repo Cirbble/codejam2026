@@ -30,8 +30,14 @@ The AI decides while there is little data; as finds come in, the crowd count ble
 
 - **Daily.** Five prompts a day, the same for everyone, picked from the date in Toronto. There's no timer, and you get one answer per prompt. A rejected photo doesn't use up your answer, and you get up to 6 tries.
 - **Squad.** Friends join with a 4-letter code. There are five rounds of 3 minutes each, or 60 seconds in quick indoor mode. After each round, every card is revealed, rarest first, and duplicates are marked "same as". A lock-screen reminder fires 30 seconds before a round ends, so phones can stay in pockets.
+- **Unique only** (squad option). Rounds as usual, but if anyone else in the squad found the same thing that round, both finds score 0. Skip the obvious answer.
+- **Impostor** (squad option, 3+ players). Each round one player secretly gets a twin prompt ("something orange" instead of "something red") and tries to pass their find off as the real thing. After the hunt everyone votes: +50 for spotting the impostor, +100 to an impostor who gets away.
+- **Collection sets.** Themed groups of prompts (Rainbow, Shapes, On wheels, one card of every tier, and more) shown in the collection's Sets tab. A find that completes a set says so.
+- **Bingo** (squad option). One 3×3 card of nine prompts, all open at once, against a 5-minute clock (3 minutes indoors). Each square takes one find, and a find's points only count once it is part of a completed row, column or diagonal. Every line you complete is worth +50 more, and the first line in the squad gets +100 more.
 
-- **Quick play.** One player, three 60-second indoor rounds that start right away, with the same three prompts for every team that day. The score goes on the team board: https://rarefind-production.up.railway.app/board.html (QR code on screen, or `/q`). Only a team's best of its first 3 runs counts.
+- **Quick play.** One player, three 60-second indoor rounds that start right away, with the same three prompts for every team that day. The score goes on the team board: https://rarefind-production.up.railway.app/board.html (QR code on screen, or `/q`). Only a team's best of its first 3 runs counts. Each run races a ghost of the day's best run: a bar under the timer shows when the leading team found each item.
+
+Every mode has a short how-to sheet that opens the first time you play it.
 
 ## Run it
 
@@ -39,6 +45,8 @@ The AI decides while there is little data; as finds come in, the crowd count ble
 cd server && npm i && npm run dev        # port 8787. Needs GEMINI_API_KEY (env or ../../.secrets/GEMINI_API_KEY)
 npm test                                 # engine tests
 npx tsx scripts/e2e.ts http://localhost:8787
+npx tsx scripts/bingo-smoke.ts http://localhost:8787   # bingo squad flow, no AI calls
+npx tsx scripts/impostor-smoke.ts http://localhost:8787   # impostor flow with 3 players, no AI calls
 
 cd app && npm i
 npx expo start                           # Expo Go, or w for web

@@ -34,8 +34,11 @@ export type Daily = {
   resetsAt: number;
 };
 
+/** A collection set's progress: per slot, the best card that fills it, or null. */
+export type CardSet = { id: string; name: string; blurb: string; done: boolean; have: number; slots: { name: string; card: Card | null }[] };
+
 export type FindResult =
-  | { accepted: true; card: Card }
+  | { accepted: true; card: Card; setsDone?: { id: string; name: string }[] }
   | { accepted: false; reason: 'no_match' | 'screen' | 'unclear'; verdict: string; triesLeft?: number }
   | { error: string; message: string; retryAfterMs?: number };
 
@@ -48,8 +51,29 @@ export type RoomView = {
   round: number;
   totalRounds: number;
   prompt: Prompt | null;
+  /** bingo squad: one 3x3 card of prompts against one clock (prompt is null; see grid) */
+  bingo?: boolean;
+  /** unique only: a find someone else in the squad matched that round scores 0 */
+  unique?: boolean;
+  /** impostor squads: built per player (you/crewPrompt only reach the impostor, whose prompt is the twin) */
+  impostor?: {
+    you: boolean;
+    crewPrompt: Prompt | null;
+    voteOpen: boolean;
+    voted: string[];
+    myVote: string | null;
+    minPlayers: number;
+    spotBonus: number;
+    foolBonus: number;
+    rounds: ({ impostorId: string; twin: Prompt; caught: boolean; votes: Record<string, string> } | null)[];
+  } | null;
+  /** Quick play: today's best run to race (same prompts); splits say when each round's find landed */
+  ghost?: { team: string; score: number; splits: ({ ms: number; points: number } | null)[] } | null;
+  huntMs?: number;
+  grid?: Prompt[] | null;
+  bingoBoard?: { marks: Record<string, string[]>; lines: Record<string, number>; first: string | null; lineBonus: number; firstBonus: number } | null;
   endsAt: number | null;
-  players: { id: string; name: string; score: number; connected: boolean; found: boolean }[];
+  players:{ id: string; name: string; score: number; connected: boolean; found: boolean }[];
   reveal: Card[] | null;
   rounds: { prompt: Prompt; cards: Card[] }[];
   best?: Record<string, string>;
@@ -67,6 +91,19 @@ export type RoomView = {
 export type BoardRow = { team: string; best: number; plays: number; bestCard: Card | null; at: number };
 
 export const MAX_TRIES = 6;
+
+/** Rows, columns and diagonals of the 3x3 bingo card, as cell indexes (same as the server). */
+export const BINGO_LINES = [
+  [0, 1, 2], [3, 4, 5], [6, 7, 8],
+  [0, 3, 6], [1, 4, 7], [2, 5, 8],
+  [0, 4, 8], [2, 4, 6],
+];
+/** Cells that sit on a completed line, given which cells are marked. */
+export function bingoLineCells(marked: boolean[]): Set<number> {
+  const out = new Set<number>();
+  for (const line of BINGO_LINES) if (line.every((i) => marked[i])) line.forEach((i) => out.add(i));
+  return out;
+}
 export const SITE = 'https://rarefind-production.up.railway.app';
 export const inviteLink = (code: string) => `${SITE}/play/?join=${code}`;
 
@@ -112,10 +149,12 @@ async function getJSON<T>(path: string, ms = 10_000): Promise<T> {
 
 let dailyMem: Daily | null = null;
 let collectionMem: Card[] | null = null;
+let setsMem: CardSet[] | null = null;
 
 /** Last known daily hunt, if it is still today's. */
 export const peekDaily = () => (dailyMem && dailyMem.resetsAt > Date.now() ? dailyMem : null);
 export const peekCollection = () => collectionMem;
+export const peekSets = () => setsMem;
 
 export async function loadCachedDaily(): Promise<Daily | null> {
   if (peekDaily()) return dailyMem;
@@ -136,8 +175,10 @@ export async function fetchDaily(): Promise<Daily> {
 }
 
 export async function fetchCollection(): Promise<Card[]> {
-  const c = (await getJSON<{ cards: Card[] }>(`/api/collection?device=${await getDevice()}`)).cards;
+  const r = await getJSON<{ cards: Card[]; sets?: CardSet[] }>(`/api/collection?device=${await getDevice()}`);
+  const c = r.cards;
   collectionMem = c;
+  setsMem = r.sets ?? null;
   prefetchCards(c.slice(0, 24), true);
   return c;
 }

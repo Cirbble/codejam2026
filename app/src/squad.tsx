@@ -159,7 +159,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
     if (!room) return;
     if (room.phase === 'hunting' && room.endsAt != null) {
       const revealMs = room.revealMs ?? Math.min(20_000, 6_000 + 3_000 * room.players.length);
-      remindRound(`${room.code}:${room.round}:${room.endsAt}`, room.endsAt + skew, cap(room.prompt?.text), room.round, room.totalRounds, foundMe, revealMs);
+      remindRound(`${room.code}:${room.round}:${room.endsAt}`, room.endsAt + skew, room.bingo ? 'Finish your bingo card' : cap(room.prompt?.text),room.round, room.totalRounds, foundMe, revealMs);
     } else if (room.phase === 'reveal' && room.endsAt != null) {
       // the round may have ended early: re-aim the "next round" call-back at the real reveal end
       remindRound(`${room.code}:${room.round}:reveal:${room.endsAt}`, room.endsAt + skew, cap(room.prompt?.text), room.round, room.totalRounds, true, 0);
