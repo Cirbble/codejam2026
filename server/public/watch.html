@@ -3,79 +3,81 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Squall · Big screen</title>
+<title>Squall big screen</title>
 <link rel="icon" href="/icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;800&family=Figtree:wght@500;700&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet" />
 <style>
-  /* Layout: the projector is a weather desk. The scope on the left, the bulletin column on the right. */
+  /* Layout: the projector is a weather desk on a daylight chart. The scope on the left, the crew on the right. */
   :root {
-    --bg: #071115; --panel: #0d1b20; --line: rgba(140,196,182,.16); --ink: #e3eee9; --dim: #8ea6a0; --faint: #5c7570;
-    --amber: #f2c14a; --safe: #4ed07a; --danger: #e4442f;
-    --display: 'Barlow Condensed', 'Arial Narrow', sans-serif; --body: 'Barlow', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
-    color-scheme: dark;
+    --sky: #d8e0e6; --sky-deep: #c8d2da; --surface: #eef2f5; --ink: #16212a; --ink-soft: #465560; --faint: #5e6c77; --line: #b3bfc9;
+    --display: 'Unbounded', 'Arial Black', sans-serif; --body: 'Figtree', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
+    color-scheme: light;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--body); overflow: hidden; }
-  .desk { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 460px); gap: 2.4vw; padding: 2.4vw; }
+  html, body { margin: 0; height: 100%; background: var(--sky); color: var(--ink); font-family: var(--body); overflow: hidden; }
+  .desk { position: relative; height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 30vw, 520px); gap: 3vw; padding: 2.6vw; }
   .scopewrap { position: relative; display: grid; place-items: center; min-width: 0; min-height: 0; }
-  canvas { width: 100%; height: 100%; display: block; }
+  canvas { display: block; border-radius: 50%; box-shadow: 0 6px 0 var(--line); }
   .col { display: flex; flex-direction: column; gap: 1.6vw; min-height: 0; }
-  .label { font-family: var(--mono); font-size: clamp(11px, .85vw, 15px); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
   .brand { display: flex; justify-content: space-between; align-items: baseline; }
-  .word { font-family: var(--display); font-weight: 800; font-size: clamp(40px, 4.2vw, 80px); line-height: .9; text-transform: uppercase; letter-spacing: .01em; }
-  .code { font-family: var(--mono); font-weight: 700; font-size: clamp(22px, 2vw, 38px); letter-spacing: .2em; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1vw; }
-  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 1.1vw 1.3vw; }
-  .big { white-space: nowrap; font-family: var(--mono); font-weight: 700; font-size: clamp(34px, 3.6vw, 70px); line-height: 1; font-variant-numeric: tabular-nums; margin-top: .4vw; }
-  .bars { display: flex; gap: 4px; margin-top: .6vw; }
-  .bars i { flex: 1; height: 8px; border-radius: 2px; background: var(--line); }
+  .word { font-family: var(--display); font-weight: 800; font-size: clamp(36px, 3.4vw, 64px); letter-spacing: -.04em; line-height: 1; }
+  .code { font-family: var(--display); font-weight: 800; font-size: clamp(26px, 2.4vw, 46px); letter-spacing: .04em; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2vw; }
+  .box { background: var(--surface); border-radius: 26px; padding: 1.3vw 1.5vw; box-shadow: 0 3px 0 var(--line); }
+  .k { font-weight: 700; color: var(--ink-soft); font-size: clamp(15px, 1.1vw, 22px); }
+  .v { font-family: var(--display); font-weight: 800; font-size: clamp(36px, 3.6vw, 72px); line-height: 1.1; white-space: nowrap; letter-spacing: -.03em; display: flex; align-items: center; gap: .3em; }
+  .v .dot { width: .4em; height: .4em; border-radius: 50%; }
   .crew { display: flex; flex-direction: column; }
-  .p { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto; gap: .9vw; align-items: center; padding: .75vw 0; border-top: 1px solid var(--line); font-size: clamp(16px, 1.35vw, 26px); font-weight: 600; }
+  .p { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto auto; gap: 1vw; align-items: center; padding: .9vw 0; border-top: 1px solid var(--sky-deep); font-size: clamp(18px, 1.6vw, 32px); font-weight: 700; }
   .p:first-child { border-top: 0; }
-  .p .dot { width: 14px; height: 14px; border-radius: 50%; }
+  .p .dot { width: 18px; height: 18px; border-radius: 50%; border: 3px solid #fff; box-sizing: content-box; }
   .p .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .p .lives { display: flex; gap: 3px; } .p .lives i { width: 16px; height: 8px; border-radius: 2px; background: var(--line); }
-  .p .s { font-family: var(--mono); font-size: .8em; color: var(--dim); min-width: 4ch; text-align: right; }
-  .down { color: var(--amber); }
-  .log { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: .5vw; font-family: var(--mono); font-size: clamp(12px, .95vw, 18px); color: var(--dim); }
-  .log b { color: var(--ink); font-weight: 500; }
-  .log .t { color: var(--faint); margin-right: .8em; }
-  .overlay { position: absolute; inset: 0; display: none; place-items: center; background: rgba(7,17,21,.86); }
-  .overlay .card { text-align: center; display: grid; gap: 1vw; }
-  .overlay h2 { font-family: var(--display); font-weight: 800; font-size: clamp(60px, 9vw, 180px); line-height: .85; text-transform: uppercase; margin: 0; }
-  .overlay .sub { font-family: var(--mono); font-size: clamp(14px, 1.4vw, 26px); letter-spacing: .14em; color: var(--dim); text-transform: uppercase; }
-  #join, #offline { position: fixed; inset: 0; display: none; place-items: center; background: var(--bg); }
-  #offline { background: rgba(7,17,21,.7); }
+  .p .n small { font-weight: 500; color: var(--faint); font-size: .7em; }
+  .p .lives { display: flex; gap: 6px; } .p .lives i { width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid var(--line); }
+  .p .s { font-family: var(--display); font-weight: 700; font-size: .85em; min-width: 3ch; text-align: right; }
+  .log { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: .6vw; font-size: clamp(15px, 1.15vw, 22px); color: var(--ink-soft); font-weight: 500; padding: 0 .4vw; }
+  .log b { color: var(--ink); font-weight: 700; }
+  .overlay { position: absolute; inset: 0; display: none; place-items: center; }
+  .overlay .card { text-align: center; display: grid; gap: 1.2vw; padding: 3vw 4vw; border-radius: 40px; background: var(--surface); box-shadow: 0 6px 0 var(--line); max-width: 92%; }
+  .overlay .card.ink { background: var(--ink); color: #fff; box-shadow: 0 6px 0 #6f7f8b; }
+  .overlay h2 { font-family: var(--display); font-weight: 800; font-size: clamp(56px, 7.4vw, 150px); letter-spacing: -.04em; line-height: 1; margin: 0; }
+  .overlay .sub { font-size: clamp(18px, 1.8vw, 34px); font-weight: 700; color: var(--ink-soft); }
+  .overlay .ink .sub { color: #aab6c0; }
+  #join, #offline { position: fixed; inset: 0; display: none; place-items: center; background: var(--sky); }
+  #offline { background: rgba(216,224,230,.7); }
+  #offline span { background: var(--ink); color: #fff; padding: 12px 22px; border-radius: 999px; font-weight: 700; font-size: 20px; }
   form { display: flex; gap: 12px; }
-  input { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font-family: var(--mono); font-size: 22px; letter-spacing: .1em; padding: 16px 18px; }
-  button { background: var(--amber); color: #1b1405; border: 0; border-radius: 10px; font-family: var(--display); font-weight: 700; font-size: 22px; letter-spacing: .08em; text-transform: uppercase; padding: 0 26px; cursor: pointer; }
+  input { background: var(--surface); border: 0; border-radius: 16px; color: var(--ink); font-family: var(--mono); font-size: 22px; padding: 16px 18px; box-shadow: inset 0 2px 0 var(--sky-deep); }
+  button { background: var(--ink); color: #fff; border: 0; border-radius: 999px; font-family: var(--body); font-weight: 700; font-size: 20px; padding: 0 28px; cursor: pointer; box-shadow: 0 5px 0 #6f7f8b; }
   @media (max-width: 900px) { html, body { overflow: auto; } .desk { grid-template-columns: minmax(0, 1fr); height: auto; } .scopewrap { aspect-ratio: 1; } }
 </style>
 </head>
 <body>
+<svg id="iso" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1000 1000" style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none"></svg>
 <div class="desk">
   <div class="scopewrap"><canvas id="cv" role="img" aria-label="Live storm radar"></canvas>
     <div class="overlay" id="ov"><div class="card" id="ovc"></div></div>
   </div>
   <div class="col">
-    <div class="brand"><div class="word">Squall</div><div class="code" id="code">----</div></div>
-    <div class="grid2">
-      <div class="box"><div class="label">Level</div><div class="big" id="lv">1</div><div class="bars" id="bars"><i></i><i></i><i></i><i></i><i></i></div></div>
-      <div class="box"><div class="label" id="clockl">Storm ends</div><div class="big" id="clock">--:--</div></div>
+    <div class="brand"><div class="word">squall</div><div class="code" id="code">----</div></div>
+    <div class="row2">
+      <div class="box"><div class="k">Level</div><div class="v" id="lv"><span class="dot" id="lvdot"></span><span id="lvn">1</span></div></div>
+      <div class="box"><div class="k" id="clockl">Storm ends</div><div class="v" id="clock">0:00</div></div>
     </div>
-    <div class="box"><div class="label" id="crewl">Crew</div><div class="crew" id="crew"></div></div>
+    <div class="box"><div class="crew" id="crew"></div></div>
     <div class="log" id="log"></div>
   </div>
 </div>
 <div id="join"><form id="jf"><input id="ji" placeholder="CODE-token" autocomplete="off" aria-label="Room code and token" /><button>Watch</button></form></div>
-<div id="offline"><div class="label" style="color:var(--amber)">Reconnecting</div></div>
+<div id="offline"><span>Reconnecting</span></div>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const DBZ = ['#1e9e4a', '#7bc63a', '#f1d23b', '#f59b2e', '#e4442f', '#c4307c'];
-const dbz = (t) => DBZ[Math.max(0, Math.min(5, Math.floor(t * 6)))];
+const DBZ = ['#2e9b57', '#e3bc1a', '#ee8a22', '#d7372b', '#b32a78'];
+const dbz = (t) => DBZ[Math.max(0, Math.min(4, Math.floor(t * 5)))];
+$('iso').innerHTML = [0.1, 0.24, 0.4, 0.57, 0.74, 0.9].map((f, i) => { const y = f * 1000, a = (i % 2 ? 1 : -1) * 45; return `<path d="M-20,${y} C250,${y + a} 550,${y - a * 1.6} 1020,${y + a * 0.6}" stroke="rgba(22,33,42,.09)" stroke-width="1.5" fill="none" vector-effect="non-scaling-stroke"/>`; }).join('');
 const parts = location.pathname.split('/').filter(Boolean);
 let code = (parts[1] || '').toUpperCase();
 let token = new URLSearchParams(location.search).get('t') || '';
@@ -104,116 +106,102 @@ setInterval(() => {
 $('jf').onsubmit = (e) => { e.preventDefault(); const [c, t] = $('ji').value.trim().split('-'); code = (c || '').toUpperCase(); token = t || ''; history.replaceState(null, '', `/watch/${code}?t=${token}`); connect(); };
 if (code && token) connect(); else $('join').style.display = 'grid';
 
-const fmt = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+const fmt = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const now = () => Date.now() - skew;
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 function render() {
   const r = room; if (!r) return;
   $('code').textContent = r.code;
   const lv = r.level || 1;
-  $('lv').textContent = lv; $('lv').style.color = dbz((lv - .5) / 5);
-  [...$('bars').children].forEach((b, i) => (b.style.background = i < lv ? dbz((i + .5) / 5) : ''));
-  const humans = r.players.filter((p) => !p.bot);
-  const key = JSON.stringify(r.players.map((p) => [p.id, p.name, p.hp, p.status, p.score, p.color, p.connected]));
+  $('lvn').textContent = lv; $('lvdot').style.background = dbz((lv - .5) / 5);
+  const key = JSON.stringify(r.players.map((p) => [p.id, p.name, p.hp, p.status, p.score, p.color]));
   if (key !== crewKey) {
     crewKey = key;
-    $('crewl').textContent = `Crew · ${r.players.length}`;
     $('crew').innerHTML = [...r.players].sort((a, b) => b.score - a.score).map((p) => `
       <div class="p"><span class="dot" style="background:${esc(p.color)}"></span>
-      <span class="n ${p.status === 'downed' ? 'down' : ''}">${esc(p.name)}${p.bot ? ' <span class="label">bot</span>' : ''}${p.status === 'downed' ? ' <span class="label down">down</span>' : ''}</span>
-      <span class="lives">${[0, 1, 2].map((i) => `<i style="background:${i < p.hp ? (p.hp === 1 ? 'var(--danger)' : 'var(--safe)') : ''}"></i>`).join('')}</span>
-      <span class="s">${p.score}</span></div>`).join('') || '<div class="label">Nobody yet</div>';
+      <span class="n">${esc(p.name)}${p.bot ? ' <small>bot</small>' : ''}${p.status === 'downed' ? ' <small>down</small>' : ''}</span>
+      <span class="lives">${[0, 1, 2].map((i) => `<i style="${i < p.hp ? `background:${p.hp === 1 ? '#d7372b' : 'var(--ink)'};border-color:${p.hp === 1 ? '#d7372b' : 'var(--ink)'}` : ''}"></i>`).join('')}</span>
+      <span class="s">${p.score}</span></div>`).join('') || '<div class="k">Nobody yet</div>';
   }
   const lk = r.feed.map((f) => f.id).join();
-  if (lk !== logKey) {
-    logKey = lk;
-    $('log').innerHTML = r.feed.slice(0, 10).map((f) => `<div><span class="t">${new Date(f.at).toTimeString().slice(0, 8)}</span><b>${esc(f.text)}</b></div>`).join('');
-  }
-  // overlays: lobby, countdown, results
-  let ov = '';
-  if (r.phase === 'lobby') ov = `<div class="label">Crew code</div><h2>${esc(r.code)}</h2><div class="sub">${r.players.length} on the crew · waiting for the host</div>`;
-  else if (r.phase === 'countdown') ov = `<div class="label" style="color:var(--amber)">Storm incoming</div><h2>${Math.max(0, Math.ceil((r.startsAt - now()) / 1000))}</h2>`;
+  if (lk !== logKey) { logKey = lk; $('log').innerHTML = r.feed.slice(0, 8).map((f) => `<div><b>${esc(f.text)}</b></div>`).join(''); }
+  let ov = '', cls = '';
+  if (r.phase === 'lobby') ov = `<div class="sub">Crew code</div><h2>${esc(r.code)}</h2><div class="sub">${plural(r.players.length, 'player')} · waiting for the host</div>`;
+  else if (r.phase === 'countdown') ov = `<div class="sub">Storm incoming</div><h2>${Math.max(0, Math.ceil((r.startsAt - now()) / 1000))}</h2>`;
   else if (r.phase === 'ended' && r.results) {
     const t = r.results.team, won = r.outcome === 'won';
-    const standing = r.results.ranking.filter((p) => p.survived).length;
-    ov = `<div class="label">Storm report · ${esc(r.code)}${t.simulated ? ' · demo' : ''}</div>
-      <h2 style="color:${won ? 'var(--safe)' : 'var(--danger)'}">${won ? 'Storm passed' : 'Storm won'}</h2>
-      <div class="sub">${standing} of ${r.results.ranking.length} standing · level ${t.peakLevel} · ${t.dodges} dodge${t.dodges === 1 ? '' : 's'} · ${t.revives} revive${t.revives === 1 ? '' : 's'} · ${fmt(t.durationSec * 1000)}</div>`;
+    cls = 'ink';
+    ov = `<h2>${won ? 'Outlasted' : 'The storm won'}</h2><div class="sub">${plural(t.dodges, 'dodge')} · ${plural(t.revives, 'revive')} · level ${t.peakLevel} · ${fmt(t.durationSec * 1000)}${t.simulated ? ' · demo' : ''}</div>`;
   }
-  if (ov !== ovKey) { ovKey = ov; $('ovc').innerHTML = ov; $('ov').style.display = ov ? 'grid' : 'none'; }
+  if (ov + cls !== ovKey) { ovKey = ov + cls; $('ovc').innerHTML = ov; $('ovc').className = 'card ' + cls; $('ov').style.display = ov ? 'grid' : 'none'; }
 }
 
 function frame(t) {
   const dt = Math.min(100, t - lastFrame); lastFrame = t;
   const cv = $('cv'), box = cv.parentElement.getBoundingClientRect(), d = devicePixelRatio || 1;
-  const S = Math.floor(Math.min(box.width, box.height));
+  const S = Math.floor(Math.min(box.width, box.height) - 8);
   if (cv.width !== S * d) { cv.width = S * d; cv.height = S * d; cv.style.width = S + 'px'; cv.style.height = S + 'px'; }
   const ctx = cv.getContext('2d'), W = cv.width, c = W / 2, R = c - 2 * d;
   const r = room, tn = now();
-  const span = r ? Math.max(60, r.settings.radiusM * 1.12) : 100;
-  const k = R / span;
+  const span = r ? Math.max(60, r.settings.radiusM * 1.12) : 100, k = R / span;
   const origin = r && r.center ? r.center : null;
-  const xy = (lat, lng) => {
-    const x = ((lng - origin.lng) * Math.PI / 180) * 6371000 * Math.cos(origin.lat * Math.PI / 180);
-    const y = ((lat - origin.lat) * Math.PI / 180) * 6371000;
-    return [c + x * k, c - y * k];
-  };
+  const xy = (lat, lng) => [c + (((lng - origin.lng) * Math.PI) / 180) * 6371000 * Math.cos((origin.lat * Math.PI) / 180) * k, c - (((lat - origin.lat) * Math.PI) / 180) * 6371000 * k];
   ctx.clearRect(0, 0, W, W);
-  const g = ctx.createRadialGradient(c, c, 0, c, c, R); g.addColorStop(0, '#0f2329'); g.addColorStop(1, '#071115');
+  const g = ctx.createRadialGradient(c, c, 0, c, c, R); g.addColorStop(0, '#f6f8fa'); g.addColorStop(1, '#eef2f5');
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.fill();
   ctx.save(); ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.clip();
   const step = span > 140 ? 50 : 25;
-  ctx.strokeStyle = 'rgba(140,196,182,.2)'; ctx.lineWidth = d;
-  for (let m = step; m < span; m += step) { ctx.setLineDash(m % (step * 2) ? [2 * d, 4 * d] : []); ctx.beginPath(); ctx.arc(c, c, m * k, 0, Math.PI * 2); ctx.stroke(); }
-  ctx.setLineDash([]); ctx.strokeStyle = 'rgba(140,196,182,.12)';
-  ctx.beginPath(); ctx.moveTo(c, 0); ctx.lineTo(c, W); ctx.moveTo(0, c); ctx.lineTo(W, c); ctx.stroke();
+  ctx.strokeStyle = '#b3bfc9'; ctx.lineWidth = 1.5 * d;
+  for (let m = step; m < span; m += step) { ctx.beginPath(); ctx.arc(c, c, m * k, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.globalAlpha = .6; ctx.beginPath(); ctx.moveTo(c, 0); ctx.lineTo(c, W); ctx.moveTo(0, c); ctx.lineTo(W, c); ctx.stroke(); ctx.globalAlpha = 1;
   if (r && origin) {
-    // the zone boundary
-    ctx.strokeStyle = 'rgba(242,193,74,.75)'; ctx.lineWidth = 2 * d; ctx.setLineDash([12 * d, 7 * d]);
-    ctx.beginPath(); ctx.arc(c, c, r.settings.radiusM * k, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = '#16212a'; ctx.globalAlpha = .55; ctx.lineWidth = 2.5 * d; ctx.setLineDash([2 * d, 9 * d]); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(c, c, r.settings.radiusM * k, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
     for (const s of r.strikes) {
-      const [x, y] = xy(s.lat, s.lng), kk = Math.min(1, Math.max(0, (tn - s.warnAt) / (s.hitAt - s.warnAt))), lit = 1 + Math.floor(kk * 5.999);
-      for (let i = 0; i < lit; i++) { ctx.globalAlpha = i === 0 ? .32 : .5; ctx.fillStyle = DBZ[i]; ctx.beginPath(); ctx.arc(x, y, s.r * k * (1 - i / 6), 0, Math.PI * 2); ctx.fill(); }
-      ctx.globalAlpha = .95; ctx.strokeStyle = DBZ[Math.min(5, lit)]; ctx.lineWidth = (s.kind === 'mega' ? 3 : 1.5) * d; ctx.setLineDash(s.kind === 'mega' ? [8 * d, 5 * d] : []);
-      ctx.beginPath(); ctx.arc(x, y, s.r * k, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
-      const sec = Math.ceil((s.hitAt - tn) / 1000);
-      if (sec > 0) { ctx.fillStyle = '#fff'; ctx.font = `700 ${Math.max(12, Math.min(26, s.r * k / d * .45)) * d}px 'JetBrains Mono', monospace`; ctx.textAlign = 'center'; ctx.fillText(String(sec), x, y + 6 * d); }
+      const [x, y] = xy(s.lat, s.lng), kk = Math.min(1, Math.max(0, (tn - s.warnAt) / (s.hitAt - s.warnAt))), lit = 1 + Math.floor(kk * 4.999);
+      for (let i = 0; i < lit; i++) { ctx.globalAlpha = i === 0 ? .55 : .8; ctx.fillStyle = DBZ[i]; ctx.beginPath(); ctx.arc(x, y, s.r * k * (1 - i / 5.6), 0, Math.PI * 2); ctx.fill(); }
+      ctx.globalAlpha = 1; ctx.strokeStyle = DBZ[lit - 1]; ctx.lineWidth = (s.kind === 'mega' ? 4 : 2.5) * d; ctx.setLineDash(s.kind === 'mega' ? [10 * d, 6 * d] : []);
+      ctx.beginPath(); ctx.arc(x, y, s.r * k, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     }
     for (const o of r.orbs) {
-      const [x, y] = xy(o.lat, o.lng), q = 7 * d;
-      if (o.kind === 'kit') { ctx.strokeStyle = '#4ed07a'; ctx.lineWidth = 1.5 * d; ctx.strokeRect(x - 8 * d, y - 8 * d, 16 * d, 16 * d); ctx.fillStyle = '#4ed07a'; ctx.fillRect(x - 1.6 * d, y - 5 * d, 3.2 * d, 10 * d); ctx.fillRect(x - 5 * d, y - 1.6 * d, 10 * d, 3.2 * d); }
-      else { ctx.strokeStyle = '#f2c14a'; ctx.lineWidth = 2 * d; ctx.beginPath(); ctx.moveTo(x, y - q); ctx.lineTo(x + q, y); ctx.lineTo(x, y + q); ctx.lineTo(x - q, y); ctx.closePath(); ctx.stroke(); }
+      const [x, y] = xy(o.lat, o.lng), q = 9 * d;
+      ctx.fillStyle = '#eef2f5'; ctx.strokeStyle = '#16212a'; ctx.lineWidth = 2.5 * d;
+      if (o.kind === 'kit') { ctx.beginPath(); ctx.arc(x, y, 11 * d, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#16212a'; ctx.fillRect(x - 1.8 * d, y - 6 * d, 3.6 * d, 12 * d); ctx.fillRect(x - 6 * d, y - 1.8 * d, 12 * d, 3.6 * d); }
+      else { ctx.beginPath(); ctx.moveTo(x, y - q); ctx.lineTo(x + q, y); ctx.lineTo(x, y + q); ctx.lineTo(x - q, y); ctx.closePath(); ctx.fill(); ctx.stroke(); }
     }
   }
-  // sweep
-  sweep = (sweep + dt / 4200 * Math.PI * 2) % (Math.PI * 2);
-  for (let i = 0; i < 16; i++) {
-    ctx.globalAlpha = .14 * Math.pow(1 - i / 16, 1.6); ctx.fillStyle = '#4ed07a'; ctx.beginPath(); ctx.moveTo(c, c);
-    ctx.arc(c, c, R, sweep - (i + 1) * .05 - Math.PI / 2, sweep - i * .05 - Math.PI / 2); ctx.closePath(); ctx.fill();
-  }
+  sweep = (sweep + dt / 5000 * Math.PI * 2) % (Math.PI * 2);
+  for (let i = 0; i < 12; i++) { ctx.globalAlpha = .028 * Math.pow(1 - i / 12, 1.5); ctx.fillStyle = '#16212a'; ctx.beginPath(); ctx.moveTo(c, c); ctx.arc(c, c, R, sweep - (i + 1) * .052 - Math.PI / 2, sweep - i * .052 - Math.PI / 2); ctx.closePath(); ctx.fill(); }
   ctx.globalAlpha = 1;
   if (r && origin) {
-    ctx.font = `600 ${15 * d}px 'Barlow', sans-serif`; ctx.textAlign = 'left';
+    for (const s of r.strikes) {
+      const [x, y] = xy(s.lat, s.lng), sec = Math.ceil((s.hitAt - tn) / 1000);
+      if (sec <= 0) continue;
+      const w = (sec >= 10 ? 46 : 34) * d, hh = 30 * d, ty = y - s.r * k;
+      ctx.fillStyle = '#16212a'; ctx.beginPath(); ctx.roundRect(x - w / 2, ty - hh / 2, w, hh, hh / 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = `700 ${17 * d}px 'JetBrains Mono', monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(sec), x, ty + d);
+    }
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = `700 ${20 * d}px Figtree, sans-serif`; ctx.textAlign = 'left';
     for (const p of r.players) {
       if (p.lat == null) continue;
       const [x, y] = xy(p.lat, p.lng), down = p.status === 'downed';
-      if (down) { ctx.strokeStyle = '#f2c14a'; ctx.setLineDash([4 * d, 4 * d]); ctx.lineWidth = 1.5 * d; ctx.beginPath(); ctx.arc(x, y, 12 * k, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
-      ctx.fillStyle = down ? '#071115' : p.color; ctx.strokeStyle = down ? '#f2c14a' : '#071115'; ctx.lineWidth = 2.5 * d;
-      ctx.beginPath(); ctx.arc(x, y, 8 * d, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = down ? '#f2c14a' : '#e3eee9'; ctx.fillText(p.name, x + 13 * d, y + 5 * d);
+      if (down) { ctx.strokeStyle = '#16212a'; ctx.setLineDash([3 * d, 6 * d]); ctx.lineWidth = 2 * d; ctx.beginPath(); ctx.arc(x, y, 12 * k, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+      ctx.fillStyle = down ? '#eef2f5' : p.color; ctx.strokeStyle = down ? '#16212a' : '#fff'; ctx.lineWidth = 3.5 * d;
+      ctx.beginPath(); ctx.arc(x, y, 10 * d, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 6 * d; ctx.strokeStyle = '#eef2f5'; ctx.lineJoin = 'round'; ctx.strokeText(p.name, x + 17 * d, y + 7 * d);
+      ctx.fillStyle = '#16212a'; ctx.fillText(p.name, x + 17 * d, y + 7 * d);
     }
   }
   ctx.restore();
-  for (let a = 0; a < 360; a += 5) {
-    const long = a % 30 === 0, r0 = R - (long ? 14 : 7) * d, rad = a * Math.PI / 180;
-    ctx.strokeStyle = a === 0 ? '#f2c14a' : 'rgba(140,196,182,.24)'; ctx.lineWidth = (a === 0 ? 3 : long ? 1.5 : 1) * d;
+  for (let a = 0; a < 360; a += 10) {
+    const long = a % 90 === 0, r0 = R - (long ? 16 : 8) * d, rad = a * Math.PI / 180;
+    ctx.globalAlpha = a === 0 ? 1 : long ? .5 : .22; ctx.strokeStyle = '#16212a'; ctx.lineWidth = (a === 0 ? 4 : 2) * d;
     ctx.beginPath(); ctx.moveTo(c + r0 * Math.sin(rad), c - r0 * Math.cos(rad)); ctx.lineTo(c + R * Math.sin(rad), c - R * Math.cos(rad)); ctx.stroke();
   }
-  ctx.strokeStyle = 'rgba(140,196,182,.24)'; ctx.lineWidth = d; ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.stroke();
-  ctx.fillStyle = '#f2c14a'; ctx.font = `700 ${16 * d}px 'JetBrains Mono', monospace`; ctx.textAlign = 'center'; ctx.fillText('N', c, 34 * d);
-  ctx.fillStyle = '#5c7570'; ctx.font = `500 ${12 * d}px 'JetBrains Mono', monospace`; ctx.textAlign = 'left';
-  for (let m = step; m < span; m += step) ctx.fillText(`${m}m`, c + m * k * .7071 + 4 * d, c - m * k * .7071 - 4 * d);
-  // clock
+  ctx.globalAlpha = .18; ctx.lineWidth = 2 * d; ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+  ctx.fillStyle = '#16212a'; ctx.font = `700 ${18 * d}px Figtree, sans-serif`; ctx.textAlign = 'center'; ctx.fillText('N', c, 42 * d);
   if (r) {
     const live = r.phase === 'playing' || r.phase === 'countdown';
     const planned = (r.settings.quick ? 100 : r.settings.durationSec) * 1000;

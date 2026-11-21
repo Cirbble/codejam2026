@@ -1,33 +1,26 @@
 # Squall: design
 
 ## Idea
-The team's raw idea was "a physical bullet hell where you need to run to dodge attacks, tracked using GPS". Squall makes it a storm. The phone is a storm spotter's radar. Danger is a storm cell forming where you stand. You escape by walking out of it.
+The team's raw idea was "a physical bullet hell where you need to run to dodge attacks, tracked using GPS". In Squall, a storm cell forms where you stand and you walk out of it. The interface is a **daylight storm chart**, because people play outdoors in the sun.
 
 ## Visual identity
-- **The radar scope is the interface everywhere.**
-  - It has range rings with metre labels, bearing ticks, an amber N and a sweep with afterglow.
-  - In the app, up is the way you face.
-- **Reflectivity is the danger scale.**
-  - Cells are drawn as concentric bands on the real radar dBZ palette: green, yellow-green, yellow, orange, red, magenta.
-  - The hot core grows as a cell nears landing.
-  - The 20 to 70 dBZ legend strip is the signature element on the home screen, the results and the landing page.
-- **Amber is for actions and warnings.** Green means clear or alive, red means hit or impact.
+- **Ground:** a pale storm sky (`#D8E0E6`, cool blue-grey) with faint isobars across every screen.
+- **Ink:** deep slate (`#16212A`) for text, primary buttons and your dot. Other players get muted slate-family tints.
+- **Reflectivity is the only bright colour, and it always means danger.** Cells are drawn as radar bands: green, yellow, orange, red, magenta. The hot core grows as a cell nears landing. The instruction panel takes the same colour, so urgency reads at a glance.
 - **Type:**
-  - Barlow Condensed for headlines and the wordmark, like broadcast weather graphics.
-  - Barlow for body text.
-  - JetBrains Mono for instrument readouts: timers, codes, coordinates, ±m accuracy, labels.
-- **One dark scope-glass ground** (`#071115`). The look is single-theme by choice.
-- **Icons** are Ionicons or inline SVG only. There are no emoji and no unicode glyph icons.
+  - Unbounded for the big words: the wordmark, the instruction, the crew code, results.
+  - Figtree for everything else.
+  - JetBrains Mono only for real numbers: the clock and cell countdowns.
+- **Shapes:** pill buttons that press down like keys (ink with a slate shadow, or outlined), rounded surfaces with a soft bottom edge, and a circular scope.
+- **Icons:** Feather and inline SVG only. There are no emoji and no unicode glyph icons.
 
 ## Screens
-- **Home:** wordmark, live coordinate readout, an animated scope with a quiet storm, the dBZ legend, name, Start a crew, Join.
-- **Lobby:** the crew code in large mono, a roster with per-player GPS accuracy, Storm length, Zone radius, bots and Big screen.
-- **Game:**
-  - Header: level, with a strip coloured on the dBZ scale; time to the end of the storm; lives; score; GPS accuracy.
-  - The scope.
-  - One panel for the single thing to do now. In order of priority: down, weak GPS, outside the zone, strike warning (an arrow plus "Walk 9 m" and the direction, and T-minus), hit or dodge, revive a teammate, clear.
-- **Results:** a storm report bulletin with an outcome headline, a data table, the crew with a standing mark, and awards.
-- **Big screen:** the scope on the left and a bulletin column on the right (level, clock, crew lives, a teletype event log), with overlays for the lobby, the countdown and the report.
+- **Home:** the wordmark, a live scope with a quiet storm, your name, Start a crew, Join by code and Demo mode.
+- **Lobby:** a large crew code, the crew with a status for each player, the storm length, the zone, bots and the big-screen link.
+- **Game:** the radar, and one huge instruction such as "Walk 9 m" with the direction and a countdown. Lives, clock and level stay small at the top.
+- **Results:** an ink reward card with the outcome headline and three stats, the crew ranking, then Run it again.
+- **Big screen:** the scope on the left and the crew, level and clock on the right, sized to read from across a room.
+- **Landing:** the name, one sentence, Play in browser (`/play`), Android, a live radar and three short cards.
 
 ## Rules that keep it fair and safe
-Warning time comes from walking pace. Hits allow for GPS error. You are only ever hit by a cell you were warned about, with one hazard at a time. There are no camping spots at the zone edge. See JUDGE_QA.md.
+Warning time comes from walking pace. Hits allow for GPS error. You are only ever hit by a cell you were warned about, and only one hazard is aimed at you at a time. There are no camping spots at the zone edge. See JUDGE_QA.md.

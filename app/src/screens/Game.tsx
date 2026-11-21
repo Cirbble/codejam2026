@@ -1,17 +1,17 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as Location from 'expo-location';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Platform, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import GameMap from '../components/GameMap';
 import { Joystick } from '../components/Joystick';
-import { H, Label, Lives, T, fmtClock } from '../components/ui';
+import { IconButton, Lives, fmtClock } from '../components/ui';
 import { isMuted, relativeDir, sayMissedWarning, setHeading, setMuted } from '../game/coach';
 import { useGame, useMe, useNow } from '../net/GameProvider';
 import { useLoc } from '../net/LocationProvider';
 import { bearingDeg, compass, distanceM, escapeExit } from '../shared/geo';
-import { C, F, R, dbzColor } from '../theme';
+import { C, F, dbzColor } from '../theme';
 
 /** Compass heading (deg) where the device supports it, so arrows point the way you're actually facing. */
 function useHeading(enabled: boolean) {
@@ -41,6 +41,7 @@ export function Game() {
   const { fix, demo, setVelocity } = useLoc();
   const now = useNow(200);
   const insets = useSafeAreaInsets();
+  const { width: winW } = useWindowDimensions();
   const [muted, setMutedState] = useState(isMuted());
   const [scopeArea, setScopeArea] = useState({ w: 360, h: 360 });
   const [flash, setFlash] = useState<{ kind: 'hit' | 'dodge'; text: string; at: number } | null>(null);
@@ -100,134 +101,86 @@ export function Game() {
   const flashOn = flash && now - flash.at < 1800;
   const level = room.level ?? 1;
   const lvColor = dbzColor((level - 0.5) / LEVELS);
-  const scopeSize = Math.max(200, Math.min(scopeArea.w, scopeArea.h));
+  const scopeSize = Math.max(200, Math.min(scopeArea.w, scopeArea.h, 520));
+  const instrW = Math.min(winW, 560) - 24 - 44;
+  /** Biggest display size at which `s` fits on one line (Unbounded runs about 0.8 em per glyph). */
+  const fit = (s: string, w: number) => Math.max(30, Math.min(60, Math.floor(w / Math.max(4, s.length * 0.8))));
 
-  let panel: React.ReactNode;
-  let tone: 'calm' | 'danger' | 'down' | 'note' = 'calm';
+  // the one instruction: what to do right now, as big as the screen allows
+  type Tone = 'calm' | 'danger' | 'down' | 'note';
+  let tone: Tone = 'calm';
+  let bg: string = C.surface;
+  let fg: string = C.ink;
+  let big = '';
+  let sub = '';
+  let side: React.ReactNode = null;
   if (downed) {
     tone = 'down';
-    panel = (
-      <>
-        <Label style={{ color: C.amber }}>Down</Label>
-        <H size={40} style={{ marginTop: 4 }}>
-          Stay put
-        </H>
-        <View style={styles.progress}>
-          <View style={[styles.progressFill, { width: `${Math.round((me?.reviveProgress ?? 0) * 100)}%` }]} />
-        </View>
-        <T style={styles.sub}>{helper ? `${helper.x.name} is ${helper.m} m ${rel(helper.deg)}` : 'Nobody is up'}</T>
-      </>
-    );
+    big = "You're down";
+    sub = helper ? `${helper.x.name} is ${helper.m} m ${rel(helper.deg)}` : 'Nobody is up';
   } else if (me?.gpsWeak && !demo) {
     tone = 'note';
-    panel = (
-      <>
-        <Label style={{ color: C.amber }}>GPS ±{Math.round(me.acc)} m</Label>
-        <H size={36} style={{ marginTop: 4 }}>
-          Weak signal
-        </H>
-        <T style={styles.sub}>Cells can't hit you until it settles</T>
-      </>
-    );
+    big = 'Weak GPS';
+    sub = "Cells can't hit you until it settles";
   } else if (me?.oob && room.center && here) {
     tone = 'note';
-    const d = Math.round(distanceM(here, room.center) - room.settings.radiusM);
-    panel = (
-      <>
-        <Label style={{ color: C.amber }}>Outside the zone</Label>
-        <H size={40} style={{ marginTop: 4 }}>
-          {`Walk ${Math.max(1, d)} m`}
-        </H>
-        <T style={styles.big}>{rel(bearingDeg(here, room.center))}</T>
-      </>
-    );
+    big = `Walk ${Math.max(1, Math.round(distanceM(here, room.center) - room.settings.radiusM))} m`;
+    sub = `${rel(bearingDeg(here, room.center))}, back into the zone`;
   } else if (danger) {
     tone = 'danger';
     const impact = danger.sec < 1.5;
-    panel = (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
-        <View style={[styles.arrow, impact && { backgroundColor: C.danger }]} accessibilityElementsHidden importantForAccessibility="no">
-          {impact ? <Ionicons name="flash" size={46} color="#fff" /> : <Ionicons name="arrow-up" size={52} color={C.amberInk} style={{ transform: [{ rotate: `${arrowDeg}deg` }] }} />}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Label style={{ color: C.danger }}>{danger.mega ? 'Supercell' : 'Strike warning'}</Label>
-          <H size={44} style={{ marginTop: 2 }}>
-            {impact ? 'Impact' : `Walk ${danger.m} m`}
-          </H>
-          {!impact && <T style={styles.big}>{rel(danger.deg)}</T>}
-          <T style={styles.mono}>{impact ? 'NOW' : `T-${Math.ceil(danger.sec)} S`}</T>
-        </View>
+    const k = danger.mega ? 1 : Math.min(1, Math.max(0, 1 - danger.sec / 12));
+    bg = dbzColor(0.2 + k * 0.8);
+    fg = bg === C.dbz[1] || bg === C.dbz[2] ? C.ink : C.white;
+    big = impact ? 'Impact' : `Walk ${danger.m} m`;
+    sub = impact ? (danger.mega ? 'Supercell' : 'Brace') : rel(danger.deg);
+    side = (
+      <View style={[styles.side, { borderColor: fg }]} accessibilityLabel={impact ? 'Impact now' : `${Math.ceil(danger.sec)} seconds`}>
+        {impact ? <Feather name="zap" size={36} color={fg} /> : <Text style={[styles.secs, { color: fg }]}>{Math.ceil(danger.sec)}</Text>}
       </View>
     );
   } else if (flashOn) {
     tone = flash!.kind === 'hit' ? 'danger' : 'calm';
-    panel = (
-      <>
-        <Label style={{ color: flash!.kind === 'hit' ? C.danger : C.safe }}>{flash!.kind === 'hit' ? 'Struck' : 'Dodged'}</Label>
-        <H size={44} style={{ marginTop: 4, color: flash!.kind === 'hit' ? C.danger : C.safe }}>
-          {flash!.text}
-        </H>
-      </>
-    );
+    if (flash!.kind === 'hit') {
+      bg = C.dbz[3];
+      fg = C.white;
+    }
+    big = flash!.kind === 'hit' ? 'Hit' : 'Dodged';
+    sub = flash!.text;
   } else if (mate) {
     tone = 'note';
-    panel = (
-      <>
-        <Label style={{ color: C.amber }}>Revive</Label>
-        <H size={40} style={{ marginTop: 4 }}>
-          {mate.x.name}
-        </H>
-        <T style={styles.big}>{`${mate.m} m ${rel(mate.deg)}`}</T>
-      </>
-    );
+    big = `Revive ${mate.x.name}`;
+    sub = `${mate.m} m ${rel(mate.deg)}`;
   } else {
-    panel = (
-      <>
-        <Label style={{ color: C.safe }}>Status</Label>
-        <H size={44} style={{ marginTop: 4, color: C.safe }}>
-          Clear
-        </H>
-        {probe && <T style={styles.sub}>{`${probe.x.kind === 'kit' ? 'Kit' : 'Probe'} ${probe.m} m ${rel(probe.deg)}`}</T>}
-      </>
-    );
+    big = 'Clear';
+    sub = probe ? `${probe.x.kind === 'kit' ? 'Kit' : 'Probe'} ${probe.m} m ${rel(probe.deg)}` : '';
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      {/* instrument header */}
+    <View style={{ flex: 1, backgroundColor: C.sky }}>
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <View style={{ gap: 4 }}>
-          <Label>Level</Label>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
-            <T style={{ fontFamily: F.displayHeavy, fontSize: 40, lineHeight: 40, color: lvColor }}>{level}</T>
-            <View style={{ flexDirection: 'row', gap: 2, marginBottom: 6 }}>
-              {Array.from({ length: LEVELS }, (_, i) => (
-                <View key={i} style={{ width: 6, height: 14, borderRadius: 1, backgroundColor: i < level ? dbzColor((i + 0.5) / LEVELS) : C.line }} />
-              ))}
-            </View>
+        <View style={styles.headLeft}>
+          {me && <Lives hp={me.hp} max={me.maxHp} />}
+          <Text style={styles.clock} accessibilityLabel={`Storm ends in ${fmtClock(left)}`}>
+            {fmtClock(left)}
+          </Text>
+          <View style={[styles.level, { borderColor: lvColor }]}>
+            <View style={[styles.levelDot, { backgroundColor: lvColor }]} />
+            <Text style={styles.levelT}>Level {level}</Text>
           </View>
         </View>
-        <View style={{ alignItems: 'center', gap: 4 }}>
-          <Label>Storm ends</Label>
-          <T style={styles.clock} accessibilityLabel={`Storm ends in ${fmtClock(left)}`}>
-            {fmtClock(left)}
-          </T>
-        </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={muted ? 'Unmute voice' : 'Mute voice'}
+          <IconButton
+            icon={muted ? 'volume-x' : 'volume-2'}
+            label={muted ? 'Unmute voice' : 'Mute voice'}
             onPress={() => {
               setMuted(!muted);
               setMutedState(!muted);
             }}
-            style={styles.iconBtn}
-          >
-            <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={19} color={C.ink} />
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Leave game"
+          />
+          <IconButton
+            icon="x"
+            label="Leave game"
             onPress={() => {
               if (Platform.OS === 'web') return leave();
               Alert.alert('Leave the game?', undefined, [
@@ -235,24 +188,15 @@ export function Game() {
                 { text: 'Leave', style: 'destructive', onPress: leave },
               ]);
             }}
-            style={styles.iconBtn}
-          >
-            <Ionicons name="close" size={21} color={C.ink} />
-          </Pressable>
+          />
         </View>
       </View>
-      <View style={styles.subHeader}>
-        {me && <Lives hp={me.hp} max={me.maxHp} />}
-        <T style={styles.monoDim}>{`${me?.score ?? 0} PTS`}</T>
-        <T style={styles.monoDim}>{demo ? 'DEMO' : fix ? `±${Math.round(fix.acc)} M` : 'NO FIX'}</T>
-      </View>
 
-      {/* the scope */}
-      <View style={styles.scopeArea} onLayout={(e) => setScopeArea({ w: e.nativeEvent.layout.width - 20, h: e.nativeEvent.layout.height - 14 })}>
+      <View style={styles.scopeArea} onLayout={(e) => setScopeArea({ w: e.nativeEvent.layout.width - 24, h: e.nativeEvent.layout.height - 16 })}>
         <GameMap room={room} meId={session.playerId} myFix={fix} now={now} escape={danger && danger.sec >= 1.5 ? danger.exit : null} heading={heading} size={scopeSize} />
         {stale && (
           <View pointerEvents="none" style={styles.stale}>
-            <T style={{ fontFamily: F.mono, fontSize: 12, color: C.amber, letterSpacing: 1 }}>RECONNECTING</T>
+            <Text style={{ fontFamily: F.bodyBold, fontSize: 14, color: C.white }}>Reconnecting</Text>
           </View>
         )}
         {demo && (
@@ -262,14 +206,35 @@ export function Game() {
         )}
       </View>
 
-      {/* the one thing to do right now */}
-      <View style={[styles.panel, tone === 'danger' && styles.panelDanger, tone === 'down' && styles.panelDown, { marginBottom: insets.bottom + 12 }]}>{room.phase === 'countdown' ? null : panel}</View>
+      <View style={[styles.instr, { backgroundColor: bg, marginBottom: insets.bottom + 12 }, bg === C.surface && styles.instrCalm]}>
+        {room.phase === 'countdown' ? null : (
+          <>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={[styles.big, { color: fg, fontSize: fit(big, instrW), lineHeight: fit(big, instrW) * 1.14 }]} numberOfLines={1}>
+                {big}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                {!!sub && (
+                  <Text style={[styles.sub, { color: fg, flex: 1 }]} numberOfLines={2}>
+                    {sub}
+                  </Text>
+                )}
+                {side}
+              </View>
+              {tone === 'down' && (
+                <View style={styles.progress}>
+                  <View style={[styles.progressFill, { width: `${Math.round((me?.reviveProgress ?? 0) * 100)}%` }]} />
+                </View>
+              )}
+            </View>
+          </>
+        )}
+      </View>
 
       {countdown > 0 && (
-        <View style={[StyleSheet.absoluteFill, styles.center, { backgroundColor: 'rgba(7,17,21,0.9)' }]}>
-          <Label style={{ color: C.amber }}>Storm incoming</Label>
-          <T style={{ fontFamily: F.displayHeavy, fontSize: 150, lineHeight: 160, color: C.ink }}>{countdown}</T>
-          <T style={styles.sub}>Walk out of every cell</T>
+        <View style={[StyleSheet.absoluteFill, styles.center, { backgroundColor: C.sky }]}>
+          <Text style={{ fontFamily: F.displayHeavy, fontSize: 180, lineHeight: 200, color: C.ink }}>{countdown}</Text>
+          <Text style={[styles.sub, { color: C.inkSoft }]}>Storm incoming</Text>
         </View>
       )}
     </View>
@@ -277,22 +242,22 @@ export function Game() {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: 16 },
-  subHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
-  clock: { fontFamily: F.monoBold, fontSize: 30, color: C.ink, fontVariant: ['tabular-nums'] },
-  iconBtn: { width: 42, height: 42, borderRadius: R.md, borderWidth: 1, borderColor: C.line, backgroundColor: C.panel, alignItems: 'center', justifyContent: 'center' },
-  monoDim: { fontFamily: F.mono, fontSize: 12, color: C.dim, letterSpacing: 1 },
-  scopeArea: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingHorizontal: 10, paddingTop: 10 },
-  stale: { position: 'absolute', top: 6, alignSelf: 'center', backgroundColor: C.panel, borderWidth: 1, borderColor: C.amber, borderRadius: R.sm, paddingHorizontal: 10, paddingVertical: 4 },
-  joy: { position: 'absolute', right: 12, bottom: 4 },
-  panel: { marginHorizontal: 12, minHeight: 150, justifyContent: 'center', backgroundColor: C.panel, borderRadius: R.lg, borderWidth: 1, borderColor: C.line, paddingHorizontal: 20, paddingVertical: 18 },
-  panelDanger: { borderColor: C.danger, backgroundColor: '#1E0E0C' },
-  panelDown: { borderColor: C.amber },
-  arrow: { width: 92, height: 92, borderRadius: 46, backgroundColor: C.amber, alignItems: 'center', justifyContent: 'center' },
-  big: { fontFamily: F.display, fontSize: 30, lineHeight: 32, color: C.ink, textTransform: 'uppercase', letterSpacing: 0.4 },
-  sub: { fontFamily: F.bodyMedium, fontSize: 17, color: C.dim, marginTop: 6 },
-  mono: { fontFamily: F.monoBold, fontSize: 18, color: C.danger, marginTop: 6, letterSpacing: 1 },
-  progress: { height: 8, borderRadius: 2, backgroundColor: C.line, marginTop: 12, overflow: 'hidden' },
-  progressFill: { height: 8, backgroundColor: C.amber },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16 },
+  headLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  clock: { fontFamily: F.monoBold, fontSize: 18, color: C.ink, fontVariant: ['tabular-nums'] },
+  level: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 2, borderRadius: 999, paddingHorizontal: 10, height: 30 },
+  levelDot: { width: 8, height: 8, borderRadius: 4 },
+  levelT: { fontFamily: F.bodyBold, fontSize: 14, color: C.ink },
+  scopeArea: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingHorizontal: 12, paddingTop: 22 },
+  stale: { position: 'absolute', top: 8, alignSelf: 'center', backgroundColor: C.ink, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 6 },
+  joy: { position: 'absolute', right: 14, bottom: 6 },
+  instr: { marginHorizontal: 12, minHeight: 170, borderRadius: 28, paddingHorizontal: 22, paddingVertical: 20, flexDirection: 'row', alignItems: 'center' },
+  instrCalm: { boxShadow: `0px 3px 0px ${C.line}` },
+  big: { fontFamily: F.displayHeavy, letterSpacing: -1.5 },
+  sub: { fontFamily: F.bodyBold, fontSize: 28, lineHeight: 34 },
+  side: { width: 72, height: 72, borderRadius: 36, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
+  secs: { fontFamily: F.displayHeavy, fontSize: 30, lineHeight: 36 },
+  progress: { height: 10, borderRadius: 5, backgroundColor: C.skyDeep, marginTop: 12, overflow: 'hidden' },
+  progressFill: { height: 10, backgroundColor: C.ink },
   center: { alignItems: 'center', justifyContent: 'center' },
 });

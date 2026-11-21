@@ -11,3 +11,4 @@ app/web-build/
 app/dist/
 server/data/
 server/data-uitest/
+app/dist-web/

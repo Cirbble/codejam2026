@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { bearingDeg, compass, distanceM, escapeExit, offsetM, toLocal } from './geo.js';
 import type { FeedItem, GameEvent, LatLng, OrbView, PlayerView, Results, RoomView, Settings, StrikeView } from './types.js';
 
-const COLORS = ['#58C4F6', '#7BE0A0', '#C9A8FF', '#FFB25B', '#9DEBE6', '#F7A8D8', '#D6F06A', '#8FB8FF'];
+// muted marker tints: on the radar only storm cells are bright
+const COLORS = ['#3E6F96', '#6B5B95', '#2F7D78', '#8A6B3D', '#5A6B7C', '#8C4F6A', '#4F7A4B', '#7A6F5A'];
 const BOT_NAMES = ['Gale', 'Nimbus', 'Cirrus', 'Haze', 'Drift', 'Sleet'];
 const MAX_HP = 3;
 const ORB_R = 9; // metres to collect

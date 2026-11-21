@@ -13,6 +13,7 @@ The big-screen page (`/watch/CODE?t=TOKEN`) shows the same radar for a projector
 | | |
 |---|---|
 | Live server, landing page and big screen | https://krillion-production-ce39cedf.up.railway.app |
+| Play in a browser | https://krillion-production-ce39cedf.up.railway.app/play (built with `app/build-web.sh`) |
 | Spectator | `/watch/CODE?t=TOKEN` (the token comes from the lobby; it can't be guessed from the room code) |
 | Repo | `server/` Node + TypeScript · `app/` Expo SDK 58 (iOS, Android, web) |
 
@@ -59,10 +60,7 @@ EXPO_PUBLIC_SERVER_URL=http://<lan-ip>:8787 npx expo start   # against a local s
   - You can only be hit by a cell you were warned about in time to walk out of it.
   - Distance walked only counts plausible movement on foot.
 - **Redeploy-safe.** Rooms are snapshotted every 2 s, on every phase change and on shutdown, so a server redeploy mid-storm resumes the game.
-- **The radar is the interface.**
-  - Range rings, bearing ticks and an N marker. Up is the way you face, using the compass.
-  - Cells are drawn as radar reflectivity bands (20 to 70 dBZ). The hot core grows as a cell nears landing.
-  - The same scope is used in the app, on the big screen and on the landing page.
+- **A daylight storm chart.** A pale sky with slate ink, readable in sunlight. Cells are drawn as radar reflectivity bands, the only bright colour, which always means danger. The same scope is used in the app, on the big screen and on the landing page. See DESIGN.md.
 
 ## Files
 

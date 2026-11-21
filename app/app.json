@@ -7,8 +7,8 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
-    "backgroundColor": "#071115",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#D8E0E6",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.benjamingurevitch.krillion",
@@ -23,7 +23,7 @@
     "android": {
       "package": "com.benjamingurevitch.krillion",
       "adaptiveIcon": {
-        "backgroundColor": "#071115",
+        "backgroundColor": "#D8E0E6",
         "foregroundImage": "./assets/adaptive-icon.png"
       },
       "permissions": [
@@ -36,8 +36,8 @@
     "web": {
       "favicon": "./assets/favicon.png",
       "name": "Squall",
-      "backgroundColor": "#071115",
-      "themeColor": "#071115"
+      "backgroundColor": "#D8E0E6",
+      "themeColor": "#D8E0E6"
     },
     "plugins": [
       "expo-font",
@@ -46,7 +46,7 @@
         {
           "image": "./assets/splash-icon.png",
           "imageWidth": 160,
-          "backgroundColor": "#071115"
+          "backgroundColor": "#D8E0E6"
         }
       ],
       "expo-status-bar",
@@ -59,7 +59,7 @@
       [
         "expo-notifications",
         {
-          "color": "#F2C14A"
+          "color": "#16212A"
         }
       ],
       "expo-audio"

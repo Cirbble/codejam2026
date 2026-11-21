@@ -1,21 +1,16 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Dot, Label, Panel, Segmented, T } from '../components/ui';
+import { Button, Dot, IconButton, Isobars, Panel, Segmented, T } from '../components/ui';
 import { SERVER_URL } from '../config';
 import { testVoice } from '../game/coach';
 import { useGame, useMe } from '../net/GameProvider';
 import { useLoc } from '../net/LocationProvider';
 import { C, F, R } from '../theme';
 
-function Util({ icon, label, onPress }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={10} style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 6 }, pressed && { opacity: 0.6 }]}>
-      <Ionicons name={icon} size={16} color={C.dim} />
-      <Label>{label}</Label>
-    </Pressable>
-  );
+function Head({ children }: { children: React.ReactNode }) {
+  return <Text style={{ fontFamily: F.bodyBold, fontSize: 15, color: C.inkSoft }}>{children}</Text>;
 }
 
 export function Lobby() {
@@ -66,36 +61,39 @@ export function Lobby() {
   const set = (patch: Partial<typeof s>) => send({ t: 'settings', settings: patch });
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScrollView contentContainerStyle={[styles.wrap, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + (gpsOk ? 120 : 190) }]}>
-        <View style={styles.header}>
-          <View>
-            <Label>Crew code</Label>
-            <T style={styles.code} accessibilityLabel={`Room code ${room.code.split('').join(' ')}`}>
-              {room.code}
-            </T>
+    <View style={{ flex: 1, backgroundColor: C.sky }}>
+      <Isobars />
+      <ScrollView contentContainerStyle={[styles.wrap, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 170 }]}>
+        <View style={styles.top}>
+          <IconButton icon="x" label="Leave crew" onPress={leave} />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <IconButton icon="volume-2" label="Voice check" onPress={testVoice} />
+            <IconButton icon="share-2" label="Invite" onPress={() => Share.share({ message: `Join my Squall crew: code ${room.code}` })} />
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel="Invite" onPress={() => Share.share({ message: `Join my Squall crew: code ${room.code}` })} style={styles.iconBtn}>
-            <Ionicons name="share-outline" size={21} color={C.ink} />
-          </Pressable>
         </View>
 
-        <Panel style={{ paddingVertical: 8 }}>
+        <View style={{ gap: 2 }}>
+          <Text style={{ fontFamily: F.bodyBold, fontSize: 15, color: C.inkSoft }}>Crew code</Text>
+          <Text style={styles.code} accessibilityLabel={`Crew code ${room.code.split('').join(' ')}`}>
+            {room.code}
+          </Text>
+        </View>
+
+        <Panel style={{ paddingVertical: 6 }}>
           {room.players.map((p, i) => {
-            const st = p.bot ? 'BOT' : p.lat == null ? 'LOCATING' : p.sim ? 'DEMO' : p.gpsWeak ? 'WEAK' : `±${Math.round(p.acc)} M`;
-            const col = p.bot ? C.faint : p.lat == null ? C.faint : p.sim ? C.dim : p.gpsWeak ? C.amber : C.safe;
+            const st = p.bot ? 'Bot' : p.lat == null ? 'Finding GPS' : p.sim ? 'Demo' : p.gpsWeak ? 'Weak GPS' : 'Ready';
             return (
-              <View key={p.id} style={[styles.player, i > 0 && { borderTopWidth: 1, borderTopColor: C.line }]}>
-                <Dot color={p.color} size={12} />
+              <View key={p.id} style={[styles.player, i > 0 && { borderTopWidth: 1, borderTopColor: C.skyDeep }]}>
+                <Dot color={p.color} size={14} />
                 <T style={styles.name} numberOfLines={1}>
                   {p.name}
+                  {p.id === me?.id ? <T style={{ color: C.faint }}> (you)</T> : null}
+                  {p.id === room.hostId && p.id !== me?.id ? <T style={{ color: C.faint }}> (host)</T> : null}
                 </T>
-                {p.id === me?.id && <T style={styles.tag}>YOU</T>}
-                {p.id === room.hostId && <T style={styles.tag}>HOST</T>}
-                <T style={[styles.status, { color: col }]}>{st}</T>
+                <T style={{ color: p.gpsWeak && !p.bot && !p.sim && p.lat != null ? C.dbz[3] : C.faint, fontFamily: F.bodyMid, fontSize: 15 }}>{st}</T>
                 {host && !p.bot && p.id !== room.hostId && (
                   <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${p.name}`} hitSlop={8} onPress={() => send({ t: 'kick', id: p.id })}>
-                    <Ionicons name="close" size={18} color={C.dim} />
+                    <Feather name="x" size={18} color={C.faint} />
                   </Pressable>
                 )}
               </View>
@@ -103,8 +101,8 @@ export function Lobby() {
           })}
         </Panel>
 
-        <View style={{ gap: 8 }}>
-          <Label>Storm</Label>
+        <View style={{ gap: 10 }}>
+          <Head>Storm</Head>
           <Segmented
             value={s.quick ? 0 : s.durationSec}
             options={[
@@ -120,15 +118,14 @@ export function Lobby() {
                 if (serverBots === 0) setBots(2);
               } else {
                 set({ quick: false, durationSec: v });
-                // leaving the table demo: back to real GPS where we have it
-                if (demo && permission === 'granted') setDemo(false);
+                if (demo && permission === 'granted') setDemo(false); // leaving the table demo: back to real GPS
               }
             }}
             disabled={!host}
           />
         </View>
-        <View style={{ gap: 8 }}>
-          <Label>Zone radius</Label>
+        <View style={{ gap: 10 }}>
+          <Head>Zone</Head>
           <Segmented
             value={s.radiusM}
             options={[
@@ -142,41 +139,40 @@ export function Lobby() {
         </View>
         {host && (
           <View style={styles.rowBetween}>
-            <Label>Practice bots</Label>
+            <Head>Practice bots</Head>
             <View style={styles.stepper}>
               <Pressable accessibilityRole="button" accessibilityLabel="Fewer bots" onPress={() => setBots(bots - 1)} style={styles.step} hitSlop={8}>
-                <Ionicons name="remove" size={20} color={C.ink} />
+                <Feather name="minus" size={20} color={C.ink} />
               </Pressable>
-              <T style={styles.stepN}>{bots}</T>
+              <Text style={styles.stepN}>{bots}</Text>
               <Pressable accessibilityRole="button" accessibilityLabel="More bots" onPress={() => setBots(bots + 1)} style={styles.step} hitSlop={8}>
-                <Ionicons name="add" size={20} color={C.ink} />
+                <Feather name="plus" size={20} color={C.ink} />
               </Pressable>
             </View>
           </View>
         )}
-
-        <Button title="Big screen" icon="tv-outline" kind="ghost" onPress={() => (Platform.OS === 'web' ? Linking.openURL(watchUrl) : Share.share({ message: watchUrl, url: watchUrl }))} />
-        <View style={styles.utils}>
-          <Util icon="volume-high-outline" label="Voice check" onPress={testVoice} />
-          {host && <Util icon="eye-off-outline" label="New screen link" onPress={() => send({ t: 'rotateWatch' })} />}
-          <Util icon="exit-outline" label="Leave" onPress={leave} />
-        </View>
+        <Button title="Big screen" icon="monitor" kind="outline" onPress={() => (Platform.OS === 'web' ? Linking.openURL(watchUrl) : Share.share({ message: watchUrl, url: watchUrl }))} />
+        {host && (
+          <Pressable accessibilityRole="button" onPress={() => send({ t: 'rotateWatch' })} hitSlop={10} style={{ alignSelf: 'center' }}>
+            <Text style={{ fontFamily: F.bodyMid, fontSize: 15, color: C.faint, textDecorationLine: 'underline' }}>New big-screen link</Text>
+          </Pressable>
+        )}
       </ScrollView>
 
-      <View style={[styles.cta, { paddingBottom: insets.bottom + 14 }]}>
+      <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
         {!gpsOk && (
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
-            {permission !== 'granted' && !demo && <Button title="Allow location" kind="ghost" style={{ flex: 1 }} onPress={async () => ((await requestPermission()) ? null : Linking.openSettings())} />}
-            {permission === 'granted' && locError && !demo && <Button title="Retry GPS" kind="ghost" style={{ flex: 1 }} onPress={retry} />}
-            <Button title="Demo location" kind="ghost" style={{ flex: 1 }} onPress={() => setDemo(true)} />
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+            {permission !== 'granted' && !demo && <Button title="Allow location" kind="outline" style={{ flex: 1 }} onPress={async () => ((await requestPermission()) ? null : Linking.openSettings())} />}
+            {permission === 'granted' && locError && !demo && <Button title="Retry GPS" kind="outline" style={{ flex: 1 }} onPress={retry} />}
+            <Button title="Use demo" kind="outline" style={{ flex: 1 }} onPress={() => setDemo(true)} />
           </View>
         )}
-        {error && <T style={{ color: C.danger, textAlign: 'center', marginBottom: 8 }}>{error}</T>}
+        {error && <T style={{ color: C.dbz[3], textAlign: 'center', marginBottom: 10, fontFamily: F.bodyBold }}>{error}</T>}
         {host ? (
-          <Button title={gpsOk ? 'Start the storm' : 'Waiting for GPS'} icon={gpsOk ? 'thunderstorm' : undefined} big disabled={!gpsOk} onPress={() => send({ t: 'start' })} />
+          <Button title={gpsOk ? 'Start the storm' : 'Finding GPS'} disabled={!gpsOk} onPress={() => send({ t: 'start' })} />
         ) : (
           <View style={{ alignItems: 'center', paddingVertical: 18 }}>
-            <Label>Waiting for the host</Label>
+            <T style={{ color: C.inkSoft, fontFamily: F.bodyMid }}>Waiting for the host</T>
           </View>
         )}
       </View>
@@ -185,18 +181,15 @@ export function Lobby() {
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingHorizontal: 18, gap: 18, maxWidth: 560, width: '100%', alignSelf: 'center' },
-  header: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-  code: { fontFamily: F.monoBold, fontSize: 56, letterSpacing: 8, color: C.ink, lineHeight: 64 },
-  iconBtn: { width: 46, height: 46, borderRadius: R.md, borderWidth: 1, borderColor: C.line, backgroundColor: C.panel, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  player: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
+  wrap: { paddingHorizontal: 24, gap: 22, maxWidth: 560, width: '100%', alignSelf: 'center' },
+  top: { flexDirection: 'row', justifyContent: 'space-between' },
+  codeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  code: { fontFamily: F.displayHeavy, fontSize: 60, lineHeight: 70, letterSpacing: 2, color: C.ink },
+  player: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
   name: { flex: 1, fontFamily: F.bodyBold, fontSize: 18 },
-  tag: { fontFamily: F.mono, fontSize: 10, color: C.dim, borderWidth: 1, borderColor: C.line, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, letterSpacing: 1 },
-  status: { fontFamily: F.mono, fontSize: 12, letterSpacing: 1, minWidth: 64, textAlign: 'right' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  utils: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4, paddingTop: 4 },
-  stepper: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  step: { width: 38, height: 38, borderRadius: R.md, backgroundColor: C.panel, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.line },
-  stepN: { width: 30, textAlign: 'center', fontFamily: F.monoBold, fontSize: 18 },
-  cta: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 18, paddingTop: 12, backgroundColor: 'rgba(7,17,21,0.95)', borderTopWidth: 1, borderTopColor: C.line },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  step: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center', boxShadow: `0px 2px 0px ${C.line}` },
+  stepN: { width: 30, textAlign: 'center', fontFamily: F.display, fontSize: 20, color: C.ink },
+  cta: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 24, paddingTop: 14, backgroundColor: C.sky, borderTopWidth: 1, borderTopColor: C.skyDeep },
 });

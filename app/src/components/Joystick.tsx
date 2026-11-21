@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { PanResponder, View } from 'react-native';
 import { C } from '../theme';
-import { Label } from './ui';
+
 
 /** Demo-mode joystick. Calls onMove(east, north) in m/s. */
 export function Joystick({ onMove, size = 100, maxSpeed = 2.2 }: { onMove: (vx: number, vy: number) => void; size?: number; maxSpeed?: number }) {
@@ -29,10 +29,9 @@ export function Joystick({ onMove, size = 100, maxSpeed = 2.2 }: { onMove: (vx: 
     <View
       {...pan.panHandlers}
       accessibilityLabel="Demo joystick"
-      style={{ width: size, height: size, borderRadius: r, backgroundColor: 'rgba(13,27,32,0.88)', borderWidth: 1, borderColor: C.ring, alignItems: 'center', justifyContent: 'center' }}
+      style={{ width: size, height: size, borderRadius: r, backgroundColor: 'rgba(238,242,245,0.92)', borderWidth: 2, borderColor: C.line, alignItems: 'center', justifyContent: 'center' }}
     >
-      <Label style={{ position: 'absolute', top: 6, fontSize: 9 }}>Demo</Label>
-      <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.amber, opacity: 0.95, transform: [{ translateX: knob.x }, { translateY: knob.y }] }} />
+      <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.ink, transform: [{ translateX: knob.x }, { translateY: knob.y }] }} />
     </View>
   );
 }

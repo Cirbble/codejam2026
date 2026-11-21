@@ -1,61 +1,56 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextStyle, View, ViewStyle, useWindowDimensions } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { haptic } from '../game/coach';
-import { C, DBZ_LABELS, F, R } from '../theme';
+import { C, F, R } from '../theme';
 
-export type IconName = React.ComponentProps<typeof Ionicons>['name'];
+export type IconName = React.ComponentProps<typeof Feather>['name'];
 
 export function T({ style, children, ...rest }: React.ComponentProps<typeof Text>) {
   return (
-    <Text style={[{ color: C.ink, fontFamily: F.body, fontSize: 16 }, style]} {...rest}>
+    <Text style={[{ color: C.ink, fontFamily: F.body, fontSize: 17, lineHeight: 23 }, style]} {...rest}>
       {children}
     </Text>
   );
 }
 
-/** Condensed display type: names, headlines, big readouts. */
+/** Display type for the big words. */
 export function H({ style, children, size = 32, ...rest }: { style?: TextStyle | TextStyle[]; children: React.ReactNode; size?: number } & React.ComponentProps<typeof Text>) {
   return (
-    <T style={[{ fontFamily: F.display, fontSize: size, lineHeight: size * 1.02, letterSpacing: 0.3, textTransform: 'uppercase' }, style as TextStyle]} {...rest}>
+    <Text style={[{ color: C.ink, fontFamily: F.display, fontSize: size, lineHeight: Math.round(size * 1.12), letterSpacing: -size * 0.03 }, style as TextStyle]} {...rest}>
       {children}
-    </T>
+    </Text>
   );
 }
 
-/** Small instrument label: mono, uppercase, tracked. */
-export function Label({ children, style }: { children: React.ReactNode; style?: TextStyle | TextStyle[] }) {
-  return <T style={[{ fontFamily: F.mono, fontSize: 11, letterSpacing: 1.4, textTransform: 'uppercase', color: C.dim }, style as TextStyle]}>{children}</T>;
-}
-
-/** Mono number with a label under it. */
-export function Readout({ value, label, color = C.ink, size = 22, align = 'flex-start' }: { value: string; label: string; color?: string; size?: number; align?: 'flex-start' | 'center' | 'flex-end' }) {
+/** Real numbers only: metres, seconds, codes. */
+export function Num({ style, children, ...rest }: React.ComponentProps<typeof Text>) {
   return (
-    <View style={{ alignItems: align, gap: 2 }}>
-      <T style={{ fontFamily: F.monoBold, fontSize: size, color, fontVariant: ['tabular-nums'] }}>{value}</T>
-      <Label>{label}</Label>
-    </View>
+    <Text style={[{ color: C.inkSoft, fontFamily: F.mono, fontSize: 15, fontVariant: ['tabular-nums'] }, style]} {...rest}>
+      {children}
+    </Text>
   );
 }
 
 type BtnProps = {
   title: string;
   onPress?: () => void;
-  kind?: 'primary' | 'ghost' | 'quiet' | 'danger';
+  kind?: 'ink' | 'outline' | 'quiet';
   disabled?: boolean;
   loading?: boolean;
   style?: ViewStyle;
-  big?: boolean;
   icon?: IconName;
 };
 
-export function Button({ title, onPress, kind = 'primary', disabled, loading, style, big, icon }: BtnProps) {
-  const filled = kind === 'primary' || kind === 'danger';
-  const fg = disabled && (kind === 'primary' || kind === 'danger') ? C.faint : kind === 'primary' ? C.amberInk : kind === 'danger' ? '#fff' : kind === 'quiet' ? C.dim : C.ink;
+/** A pill that presses down like a key. */
+export function Button({ title, onPress, kind = 'ink', disabled, loading, style, icon }: BtnProps) {
+  const fg = kind === 'ink' ? C.white : C.ink;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={title}
+      accessibilityState={{ disabled: !!disabled }}
       disabled={disabled || loading}
       onPress={() => {
         haptic.tap();
@@ -63,16 +58,40 @@ export function Button({ title, onPress, kind = 'primary', disabled, loading, st
       }}
       style={({ pressed }) => [
         s.btn,
-        big && { paddingVertical: 19 },
-        filled ? { backgroundColor: kind === 'danger' ? C.danger : C.amber } : kind === 'ghost' ? s.ghost : s.quiet,
-        disabled && filled && { backgroundColor: C.panel2 },
-        (disabled || loading) && !filled && { opacity: 0.45 },
-        pressed && { opacity: 0.85, transform: [{ scale: 0.985 }] },
+        kind === 'ink' && { backgroundColor: C.ink, boxShadow: `0px ${pressed ? 1 : 5}px 0px #6F7F8B` },
+        kind === 'outline' && { backgroundColor: C.surface, borderWidth: 2, borderColor: C.ink, boxShadow: `0px ${pressed ? 1 : 4}px 0px ${C.line}` },
+        kind === 'quiet' && { height: 48, backgroundColor: 'transparent' },
+        pressed && kind !== 'quiet' && { transform: [{ translateY: 4 }] },
+        pressed && kind === 'quiet' && { opacity: 0.55 },
+        disabled && { opacity: 0.38 },
         style,
       ]}
     >
-      {loading ? <ActivityIndicator color={fg} /> : icon ? <Ionicons name={icon} size={big ? 22 : 19} color={fg} /> : null}
-      <T style={[s.btnText, big && { fontSize: 22 }, { color: fg }]}>{title}</T>
+      {loading ? (
+        <ActivityIndicator color={fg} />
+      ) : (
+        <>
+          {icon && <Feather name={icon} size={20} color={fg} />}
+          <Text style={{ fontFamily: F.bodyBold, fontSize: 18, color: kind === 'quiet' ? C.inkSoft : fg }}>{title}</Text>
+        </>
+      )}
+    </Pressable>
+  );
+}
+
+export function IconButton({ icon, onPress, label }: { icon: IconName; onPress: () => void; label: string }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={8}
+      onPress={() => {
+        haptic.tap();
+        onPress();
+      }}
+      style={({ pressed }) => [s.icon, pressed && { opacity: 0.6 }]}
+    >
+      <Feather name={icon} size={20} color={C.ink} />
     </Pressable>
   );
 }
@@ -97,9 +116,9 @@ export function Segmented<V extends string | number>({ value, options, onChange,
               haptic.tap();
               onChange(o.value);
             }}
-            style={[s.segItem, on && s.segOn, disabled && { opacity: 0.5 }]}
+            style={[s.segItem, on && s.segOn, disabled && !on && { opacity: 0.6 }]}
           >
-            <T style={[s.segText, on && { color: C.amberInk }]}>{o.label}</T>
+            <Text style={{ fontFamily: F.bodyBold, fontSize: 15, color: on ? C.white : C.inkSoft }}>{o.label}</Text>
           </Pressable>
         );
       })}
@@ -107,59 +126,50 @@ export function Segmented<V extends string | number>({ value, options, onChange,
   );
 }
 
-/** Lives as instrument segments. */
-export function Lives({ hp, max = 3, width = 16 }: { hp: number; max?: number; width?: number }) {
+/** Three lives as dots. The last one turns red. */
+export function Lives({ hp, max = 3, size = 12 }: { hp: number; max?: number; size?: number }) {
   return (
-    <View style={{ flexDirection: 'row', gap: 3 }} accessibilityLabel={`${hp} of ${max} lives`}>
+    <View style={{ flexDirection: 'row', gap: 5 }} accessibilityLabel={`${hp} of ${max} lives`}>
       {Array.from({ length: max }, (_, i) => (
-        <View key={i} style={{ width, height: 8, borderRadius: 2, backgroundColor: i < hp ? (hp === 1 ? C.danger : C.safe) : 'rgba(140,196,182,0.18)' }} />
+        <View key={i} style={{ width: size, height: size, borderRadius: size, backgroundColor: i < hp ? (hp === 1 ? C.dbz[3] : C.ink) : 'transparent', borderWidth: 2, borderColor: i < hp ? (hp === 1 ? C.dbz[3] : C.ink) : C.line }} />
       ))}
     </View>
   );
 }
 
-/** The reflectivity scale, the game's signature strip. */
-export function DbzLegend({ height = 6, labels = false }: { height?: number; labels?: boolean }) {
-  return (
-    <View style={{ gap: 4 }}>
-      <View style={{ flexDirection: 'row', height, borderRadius: 2, overflow: 'hidden' }}>
-        {C.dbz.map((c) => (
-          <View key={c} style={{ flex: 1, backgroundColor: c }} />
-        ))}
-      </View>
-      {labels && (
-        <View style={{ flexDirection: 'row' }}>
-          {DBZ_LABELS.map((l, i) => (
-            <T key={l} style={{ flex: 1, fontFamily: F.mono, fontSize: 9, color: C.faint }}>
-              {i === DBZ_LABELS.length - 1 ? `${l} DBZ` : l}
-            </T>
-          ))}
-        </View>
-      )}
-    </View>
-  );
+export function Dot({ color, size = 12 }: { color: string; size?: number }) {
+  return <View style={{ width: size, height: size, borderRadius: size, backgroundColor: color }} />;
 }
 
-export function Dot({ color, size = 10 }: { color: string; size?: number }) {
-  return <View style={{ width: size, height: size, borderRadius: size, backgroundColor: color }} />;
+/** Faint isobars across the ground: the storm chart this all sits on. */
+export function Isobars() {
+  const { width, height } = useWindowDimensions();
+  const w = width;
+  const h = height;
+  const lines = [0.12, 0.27, 0.43, 0.6, 0.78, 0.94].map((f, i) => {
+    const y = h * f;
+    const a = (i % 2 ? 1 : -1) * h * 0.05;
+    return `M${-20},${y} C${w * 0.25},${y + a} ${w * 0.55},${y - a * 1.6} ${w + 20},${y + a * 0.6}`;
+  });
+  return (
+    <Svg pointerEvents="none" width={w} height={h} style={StyleSheet.absoluteFill}>
+      {lines.map((d, i) => (
+        <Path key={i} d={d} stroke={C.isobar} strokeWidth={1.5} fill="none" />
+      ))}
+    </Svg>
+  );
 }
 
 export const fmtClock = (ms: number) => {
   const sec = Math.max(0, Math.ceil(ms / 1000));
-  return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 };
 
-/** 45.50480 N  73.57720 W */
-export const fmtCoord = (lat: number, lng: number) => `${Math.abs(lat).toFixed(4)}${lat >= 0 ? 'N' : 'S'}  ${Math.abs(lng).toFixed(4)}${lng >= 0 ? 'E' : 'W'}`;
-
 const s = StyleSheet.create({
-  btn: { borderRadius: R.md, paddingVertical: 15, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
-  ghost: { borderWidth: 1, borderColor: C.ring, backgroundColor: 'rgba(140,196,182,0.05)' },
-  quiet: { backgroundColor: 'transparent' },
-  btnText: { fontFamily: F.display, fontSize: 19, letterSpacing: 1.2, textTransform: 'uppercase' },
-  panel: { backgroundColor: C.panel, borderRadius: R.lg, borderWidth: 1, borderColor: C.line, padding: 16 },
-  seg: { flexDirection: 'row', backgroundColor: C.bg, borderRadius: R.md, padding: 3, borderWidth: 1, borderColor: C.line },
-  segItem: { flex: 1, paddingVertical: 10, borderRadius: 7, alignItems: 'center' },
-  segOn: { backgroundColor: C.amber },
-  segText: { fontFamily: F.mono, fontSize: 14, color: C.dim },
+  btn: { height: 60, borderRadius: R.pill, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 24 },
+  icon: { width: 46, height: 46, borderRadius: 23, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center', boxShadow: `0px 2px 0px ${C.line}` },
+  panel: { backgroundColor: C.surface, borderRadius: R.lg, padding: 18, boxShadow: `0px 2px 0px ${C.line}` },
+  seg: { flexDirection: 'row', backgroundColor: C.skyDeep, borderRadius: R.pill, padding: 4 },
+  segItem: { flex: 1, height: 42, borderRadius: R.pill, alignItems: 'center', justifyContent: 'center' },
+  segOn: { backgroundColor: C.ink },
 });

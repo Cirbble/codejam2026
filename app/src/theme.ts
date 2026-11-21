@@ -1,27 +1,21 @@
 /**
- * Squall: the phone is a storm spotter's radar scope.
- * Dark scope glass, phosphor ink, the radar reflectivity scale (dBZ) for danger, amber for actions.
+ * Squall: a daylight storm chart.
+ * Pale storm-sky ground, deep slate ink, faint isobars. The radar reflectivity scale is the only bright colour,
+ * and it always means danger: cells, hits, the last life.
  */
 export const C = {
-  bg: '#071115', // scope glass
-  panel: '#0D1B20',
-  panel2: '#12262C',
-  line: 'rgba(140,196,182,0.16)',
-  ring: 'rgba(140,196,182,0.20)',
-  ink: '#E3EEE9',
-  dim: '#8EA6A0',
-  faint: '#5C7570',
-  amber: '#F2C14A', // actions and warnings
-  amberInk: '#1B1405',
-  safe: '#4ED07A',
-  danger: '#E4442F',
-  magenta: '#C4307C',
-  // reflectivity scale, light rain -> hail core
-  dbz: ['#1E9E4A', '#7BC63A', '#F1D23B', '#F59B2E', '#E4442F', '#C4307C'] as const,
+  sky: '#D8E0E6', // ground: pale storm sky, cool blue-grey
+  skyDeep: '#C8D2DA',
+  surface: '#EEF2F5', // raised panels and the scope glass
+  ink: '#16212A', // deep slate: text, primary buttons, your dot
+  inkSoft: '#465560',
+  faint: '#5E6C77',
+  line: '#B3BFC9',
+  isobar: 'rgba(22,33,42,0.10)',
+  white: '#FFFFFF',
+  // reflectivity, light rain -> hail core (danger only)
+  dbz: ['#2E9B57', '#E3BC1A', '#EE8A22', '#D7372B', '#B32A78'] as const,
 };
-
-/** dBZ labels that go with C.dbz, for the legend strip. */
-export const DBZ_LABELS = ['20', '30', '40', '50', '60', '70'] as const;
 
 /** Reflectivity colour for an intensity 0..1 (a cell gets hotter as it is about to land). */
 export function dbzColor(t: number) {
@@ -29,14 +23,18 @@ export function dbzColor(t: number) {
   return C.dbz[i];
 }
 
+/** Player marker colours: muted slate-family tints, so nothing but a cell reads as danger. */
+export const CREW = ['#3E6F96', '#6B5B95', '#2F7D78', '#8A6B3D', '#5A6B7C', '#8C4F6A', '#4F7A4B', '#7A6F5A'];
+
 export const F = {
-  display: 'BarlowCondensed_700Bold',
-  displayHeavy: 'BarlowCondensed_800ExtraBold',
-  body: 'Barlow_400Regular',
-  bodyMedium: 'Barlow_500Medium',
-  bodyBold: 'Barlow_600SemiBold',
+  display: 'Unbounded_700Bold',
+  displayHeavy: 'Unbounded_800ExtraBold',
+  displayMid: 'Unbounded_500Medium',
+  body: 'Figtree_400Regular',
+  bodyMid: 'Figtree_500Medium',
+  bodyBold: 'Figtree_700Bold',
   mono: 'JetBrainsMono_500Medium',
   monoBold: 'JetBrainsMono_700Bold',
 };
 
-export const R = { sm: 6, md: 10, lg: 14 };
+export const R = { sm: 10, md: 16, lg: 24, pill: 999 };
