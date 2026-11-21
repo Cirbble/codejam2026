@@ -43,8 +43,8 @@ h1 em { font-style: normal; filter: saturate(1.15) brightness(0.86); padding: 0 
 @media (max-width: 520px) { .cta { display: grid; grid-template-columns: 1fr; } .cta .btn { justify-content: center; } .cta .btn:not(.blaze) { height: 44px; border: 0; text-decoration: underline; text-underline-offset: 4px; background: none; } }
 
 /* the hand */
-.hand { position: relative; height: 500px; margin-right: -40px; }
-.card { --w: 206px; position: absolute; left: 50%; top: 50%; width: var(--w); aspect-ratio: 5 / 7; border: 2px solid var(--ink); border-radius: 18px; padding: 11px; background: var(--f); box-shadow: 0 6px 0 var(--ink); transform: translate(-50%, -50%) translate(var(--x), var(--y)) rotate(var(--r)); transition: transform .35s cubic-bezier(.2,.8,.2,1); overflow: hidden; }
+.hand { position: relative; height: min(500px, 36vw); margin-right: clamp(-40px, calc(1374px - 100vw), 0px); }
+.card { --w: min(206px, 15vw); position: absolute; left: 50%; top: 50%; width: var(--w); aspect-ratio: 5 / 7; border: 2px solid var(--ink); border-radius: 18px; padding: 11px; background: var(--f); box-shadow: 0 6px 0 var(--ink); transform: translate(-50%, -50%) translate(var(--x), var(--y)) rotate(var(--r)); transition: transform .35s cubic-bezier(.2,.8,.2,1); overflow: hidden; }
 .card:hover { transform: translate(-50%, -50%) translate(var(--x), calc(var(--y) - 26px)) rotate(var(--r)); z-index: 9; }
 .card .in { height: 100%; display: flex; flex-direction: column; background: var(--card); border: 1.5px solid var(--ink); border-radius: 10px; overflow: hidden; }
 .card .top { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px 7px; font: 600 10px/1 var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); }
@@ -58,11 +58,11 @@ h1 em { font-style: normal; filter: saturate(1.15) brightness(0.86); padding: 0 
 .card.foil::after { content: ""; position: absolute; inset: -40% auto -40% -60%; width: 45%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.5), transparent); transform: rotate(18deg); animation: sheen 4.2s ease-in-out infinite; pointer-events: none; }
 .card.holo { background: var(--holo); }
 @keyframes sheen { 0%, 55% { left: -60%; } 85%, 100% { left: 130%; } }
-.c1 { --f: var(--common-f); --c: var(--common); --x: -232px; --y: 46px; --r: -12deg; }
-.c2 { --f: var(--uncommon-f); --c: var(--uncommon); --x: -112px; --y: 10px; --r: -6deg; }
-.c3 { --f: var(--rare-f); --c: var(--rare); --x: 8px; --y: -6px; --r: 0deg; }
-.c4 { --f: var(--epic-f); --c: var(--epic); --x: 128px; --y: 10px; --r: 6deg; }
-.c5 { --c: var(--one); --x: 248px; --y: 46px; --r: 12deg; }
+.c1 { --f: var(--common-f); --c: var(--common); --x: calc(var(--w) * -1.126); --y: 46px; --r: -12deg; }
+.c2 { --f: var(--uncommon-f); --c: var(--uncommon); --x: calc(var(--w) * -0.544); --y: 10px; --r: -6deg; }
+.c3 { --f: var(--rare-f); --c: var(--rare); --x: calc(var(--w) * 0.039); --y: -6px; --r: 0deg; }
+.c4 { --f: var(--epic-f); --c: var(--epic); --x: calc(var(--w) * 0.621); --y: 10px; --r: 6deg; }
+.c5 { --c: var(--one); --x: calc(var(--w) * 1.204); --y: 46px; --r: 12deg; }
 
 /* ladder */
 .today { background: var(--ink); color: #fff; }
