@@ -39,7 +39,7 @@ export function Collection() {
 
   return (
     <Screen>
-      <Bar onBack={nav.back} title="Collection" right={<Mono style={{ width: 44, textAlign: 'right', color: C.ink, fontSize: 15 }}>{cards?.length ?? ''}</Mono>} />
+      <Bar onBack={nav.back} title="Cards" right={<Mono style={{ width: 44, textAlign: 'right', color: C.ink, fontSize: 15 }}>{cards?.length ?? ''}</Mono>} />
       {cards && cards.length > 0 && (
         <View style={styles.filters}>
           {TIER_ORDER.map((t) => {

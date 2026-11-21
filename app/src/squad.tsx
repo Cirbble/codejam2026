@@ -19,6 +19,7 @@ type Squad = {
   leave: () => void;
   clearError: () => void;
   pendingJoin: string | null;
+  pendingSolo: boolean;
 };
 const Ctx = createContext<Squad>(null as unknown as Squad);
 export const useSquad = () => useContext(Ctx);
@@ -47,6 +48,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skew, setSkew] = useState(0);
+  const [pendingSolo, setPendingSolo] = useState(false); // a solo run was just requested (its room hasn't arrived yet)
   // a squad code from an invite link, used to prefill Join
   const [pendingJoin, setPendingJoin] = useState<string | null>(() => (Platform.OS === 'web' ? joinCodeFrom((globalThis as any).location?.search) : null));
   useEffect(() => {
@@ -158,6 +160,9 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
     if (room.phase === 'hunting' && room.endsAt != null) {
       const revealMs = room.revealMs ?? Math.min(20_000, 6_000 + 3_000 * room.players.length);
       remindRound(`${room.code}:${room.round}:${room.endsAt}`, room.endsAt + skew, cap(room.prompt?.text), room.round, room.totalRounds, foundMe, revealMs);
+    } else if (room.phase === 'reveal' && room.endsAt != null) {
+      // the round may have ended early: re-aim the "next round" call-back at the real reveal end
+      remindRound(`${room.code}:${room.round}:reveal:${room.endsAt}`, room.endsAt + skew, cap(room.prompt?.text), room.round, room.totalRounds, true, 0);
     } else if (room.phase === 'ended' || room.phase === 'lobby') clearReminders();
   }, [room?.phase, room?.endsAt, room?.round, room?.code, foundMe, skew]);
 
@@ -191,6 +196,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setRoom(null);
       if (!first.solo) initNotifications().catch(() => {}); // squads only, and only when one starts
+      setPendingSolo(!!first.solo);
       pending.current = { ...first, device: await getDevice(), op: Date.now().toString(36) + Math.random().toString(36).slice(2) }; // op makes a retried create/join idempotent
       want.current = true;
       open();
@@ -239,8 +245,9 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
       leave,
       clearError: () => setError(null),
       pendingJoin,
+      pendingSolo,
     }),
-    [room, session, connected, error, skew, start, send, leave, pendingJoin],
+    [room, session, connected, error, skew, start, send, leave, pendingJoin, pendingSolo],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

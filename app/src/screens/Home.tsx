@@ -47,9 +47,12 @@ export default function Home() {
   const opened = React.useRef(false);
   useEffect(() => {
     // the event QR code opens Quick play straight away (?solo=1)
-    const q = (globalThis as any).location?.search as string | undefined;
-    if (!opened.current && q && /[?&]solo=1/.test(q)) {
+    const loc = (globalThis as any).location as Location | undefined;
+    if (!opened.current && loc?.search && /[?&]solo=1/.test(loc.search)) {
       opened.current = true;
+      try {
+        (globalThis as any).history?.replaceState(null, '', loc.pathname); // consume it: Back must reach Home
+      } catch {}
       nav.push({ name: 'solo' });
       return;
     }
@@ -75,7 +78,7 @@ export default function Home() {
       <Mono style={{ marginTop: 6 }}>{daily ? fmtDay(daily.day) : new Date().toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric' })}</Mono>
 
       <View style={{ flex: 1, justifyContent: 'center' }}>
-      <View style={[styles.stage, { flex: 1, justifyContent: 'center' }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Today's prompts" onPress={() => daily && nav.push({ name: 'daily' })} style={[styles.stage, { flex: 1, justifyContent: 'center' }]}>
         {/* today's five, fanned like a hand of cards */}
         <View style={{ width: fanW, height: cw * 1.4 + 40, alignItems: 'center', justifyContent: 'center' }}>
           {Array.from({ length: total }).map((_, i) => {
@@ -103,7 +106,7 @@ export default function Home() {
           </H>
           <T style={{ fontFamily: F.bodyBold, color: C.inkSoft }}>pts · {found} of {total} today</T>
         </View>
-      </View>
+      </Pressable>
 
       <View style={{ gap: 12 }}>
         {failed && (
@@ -151,8 +154,7 @@ export default function Home() {
       </View>
       <View style={{ gap: 12, marginTop: 12 }}>
         <View style={{ flexDirection: 'row', gap: 10 }}>
-          <Button title="Quick play" kind="line" onPress={() => nav.push({ name: 'solo' })} style={{ flex: 1.3, paddingHorizontal: 6 }} />
-          <Button title="Today" kind="line" onPress={() => nav.push({ name: 'daily' })} disabled={!daily} style={{ flex: 1, paddingHorizontal: 8 }} />
+          <Button title="Quick play" icon="zap" kind="ink" onPress={() => nav.push({ name: 'solo' })} style={{ flex: 1.4, paddingHorizontal: 8 }} />
           <Button title="Squad" kind="line" onPress={() => nav.push({ name: 'squad' })} style={{ flex: 1, paddingHorizontal: 8 }} />
         </View>
       </View>

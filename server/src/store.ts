@@ -32,9 +32,12 @@ type FindsDoc = {
   daily: Record<string, Record<string, DailyEntry>>;
   /** cardId -> its used-photo key, so a dropped card frees its photo mark */
   photoMark: Record<string, string>;
+  /** squad/solo cards committed but not yet confirmed in a room snapshot (crash-window journal) */
+  pendingSquad: Record<string, PendingSquad>;
 };
+export type PendingSquad = { code: string; playerId: string; submissionId: string; round: number };
 const FINDS_FILE = join(DATA_DIR, 'finds.json');
-const empty = (): FindsDoc => ({ counts: dict(), counted: dict(), cards: dict(), devices: dict(), daily: dict(), photoMark: dict() });
+const empty = (): FindsDoc => ({ counts: dict(), counted: dict(), cards: dict(), devices: dict(), daily: dict(), photoMark: dict(), pendingSquad: dict() });
 
 /** Rebuild a loaded document with null-prototype dictionaries at every level keyed by user strings. */
 function normalize(raw: any): FindsDoc {
@@ -46,6 +49,7 @@ function normalize(raw: any): FindsDoc {
     devices: toDict(raw?.devices, (l) => (Array.isArray(l) ? l : [])),
     daily: toDict(raw?.daily, (byDev) => toDict(byDev, entry)),
     photoMark: toDict(raw?.photoMark),
+    pendingSquad: toDict(raw?.pendingSquad),
   };
 }
 
@@ -147,6 +151,40 @@ export function countFind(promptId: string, label: string, crowdKey: string, ima
     delete doc.counted[ki];
   };
   return { sameCount: Math.max(1, m[label] ?? 0), totalCount: Math.max(1, total), counted: fresh, firstEver, undo };
+}
+
+/** Journal a squad/solo card in the same atomic commit as the card itself; cleared once the room snapshot has it. */
+export function markPendingSquad(cardId: string, p: PendingSquad) {
+  doc.pendingSquad[cardId] = p;
+}
+export function clearPendingSquad(cardId: string) {
+  if (!doc.pendingSquad[cardId]) return;
+  delete doc.pendingSquad[cardId];
+  dirty();
+}
+export function pendingSquads(): [string, PendingSquad][] {
+  return Object.entries(doc.pendingSquad);
+}
+/** Let the same photo be sent again (its card got no room credit). */
+export function releaseUsedPhoto(cardId: string) {
+  const uk = doc.photoMark[cardId];
+  if (uk) delete doc.counted[uk];
+}
+
+/** Counts as they'd be for this find, without recording anything (test traffic). */
+export function peekCounts(promptId: string, label: string) {
+  const m = doc.counts[promptId] ?? dict<number>();
+  const { total } = promptTotals(promptId);
+  return { sameCount: (m[label] ?? 0) + 1, totalCount: total + 1, counted: false, firstEver: false, undo: () => {} };
+}
+
+/** Moderation: zero one prompt's crowd counts (and its dedup marks, so new finds count again). Used-photo marks stay. */
+export function resetPromptCounts(promptId: string): number {
+  const { total } = promptTotals(promptId);
+  doc.counts[promptId] = dict<number>();
+  for (const k of Object.keys(doc.counted)) if (k.startsWith(`d|${promptId}|`) || k.startsWith(`i|${promptId}|`)) delete doc.counted[k];
+  commitFinds();
+  return total;
 }
 
 const usedKey = (promptId: string, device: string, imageHash: string) => `u|${promptId}|${device}|${imageHash}`;

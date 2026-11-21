@@ -67,3 +67,29 @@ test('a board write failure throws and rolls back, so the same run can be record
   assert.deepEqual(board.recordRun({ runId: 'later', team: 'Echo', playerName: 'e', score: 30, bestCardId: null, at: 5 }), { rank: 1, best: 30 });
   assert.equal(board.boardView().teams[0].plays, 1);
 });
+
+test('only the best of a team\'s first 3 runs counts; later runs are saved but ignored', () => {
+  board.resetBoard(0);
+  for (const [i, score] of [30, 60, 45, 100, 130].entries()) board.recordRun({ runId: `g${i}`, team: 'Grinders', playerName: 'g', score, bestCardId: null, at: 10 + i });
+  const row = board.boardView().teams[0];
+  assert.equal(row.best, 60, 'runs 4 and 5 (100, 130) do not count');
+  assert.equal(row.plays, 5);
+  const disk = JSON.parse(readFileSync(join(process.env.DATA_DIR!, 'board.json'), 'utf8'));
+  assert.equal(disk.runs.length, 5, 'all runs kept');
+});
+
+test('moderation: hidden teams and "E2E " test teams are off the board; runs stay', () => {
+  board.resetBoard(0);
+  board.recordRun({ runId: 'h1', team: 'Spam Team', playerName: 's', score: 300, bestCardId: null, at: 1 });
+  board.recordRun({ runId: 'h2', team: 'Real Team', playerName: 'r', score: 60, bestCardId: null, at: 2 });
+  assert.equal(board.recordRun({ runId: 'h3', team: 'E2E Test ab12', playerName: 'e', score: 999, bestCardId: null, at: 3 }), null, 'test team has no standing');
+  assert.deepEqual(board.boardView().teams.map((t) => t.team), ['Spam Team', 'Real Team']);
+  assert.equal(board.hideTeam('  spam   TEAM '), true);
+  assert.deepEqual(board.boardView().teams.map((t) => t.team), ['Real Team']);
+  assert.deepEqual(board.standing('real team'), { rank: 1, best: 60 });
+  assert.equal(board.hideTeam('nobody'), false);
+  board.hideTeam('Spam Team', false);
+  assert.equal(board.boardView().teams.length, 2, 'shown again');
+  const disk = JSON.parse(readFileSync(join(process.env.DATA_DIR!, 'board.json'), 'utf8'));
+  assert.equal(disk.runs.length, 3);
+});

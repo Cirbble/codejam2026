@@ -6,10 +6,15 @@ import type { Card } from './types.js';
 
 /** People's Choice leaderboard: one solo run per table visit, aggregated per team. Persisted in DATA_DIR/board.json. */
 export type Run = { runId: string; team: string; playerName: string; score: number; bestCardId: string | null; at: number };
-type TeamRow = { team: string; best: number; plays: number; bestCardId: string | null; at: number };
-type BoardDoc = { teams: Dict<TeamRow>; runs: Run[]; runIds: Dict<1>; updatedAt: number };
+/** plays: every run; counted: runs that count (the first COUNTED_RUNS); best is the best of those. */
+type TeamRow = { team: string; best: number; plays: number; counted?: number; bestCardId: string | null; at: number };
+type BoardDoc = { teams: Dict<TeamRow>; runs: Run[]; runIds: Dict<1>; hidden: Dict<1>; updatedAt: number };
 
 export const BOARD_TOP = 50;
+/** Only each team's first 3 runs count toward its best (no grinding); later runs are saved but ignored. */
+export const COUNTED_RUNS = 3;
+/** Test teams (the e2e uses "E2E ..." names) never show on the board. */
+const isTestTeam = (display: string) => /^e2e /i.test(display);
 const MAX_RUNS_KEPT = 5000;
 const FILE = join(DATA_DIR, 'board.json');
 
@@ -26,7 +31,7 @@ export function displayTeam(name: unknown): string {
     .trim();
 }
 
-const emptyDoc = (now = 0): BoardDoc => ({ teams: dict(), runs: [], runIds: dict(), updatedAt: now });
+const emptyDoc = (now = 0): BoardDoc => ({ teams: dict(), runs: [], runIds: dict(), hidden: dict(), updatedAt: now });
 
 function load(): BoardDoc {
   try {
@@ -35,7 +40,7 @@ function load(): BoardDoc {
       const runs: Run[] = Array.isArray(raw.runs) ? raw.runs : [];
       const runIds = toDict<1>(raw.runIds);
       for (const r of runs) if (r.runId) runIds[r.runId] = 1;
-      return { teams: toDict<TeamRow>(raw.teams), runs, runIds, updatedAt: Number(raw.updatedAt) || 0 };
+      return { teams: toDict<TeamRow>(raw.teams), runs, runIds, hidden: toDict<1>(raw.hidden), updatedAt: Number(raw.updatedAt) || 0 };
     }
   } catch (e) {
     console.warn('[board] unreadable, starting empty:', (e as Error).message);
@@ -44,28 +49,34 @@ function load(): BoardDoc {
 }
 let doc = load();
 
-/** Sorted: best desc, then the earlier best run. */
+/** Visible teams, sorted: best desc, then the earlier best run. Hidden and test teams are left out. */
 function sorted(): [string, TeamRow][] {
-  return Object.entries(doc.teams).sort((a, b) => b[1].best - a[1].best || a[1].at - b[1].at);
+  return Object.entries(doc.teams)
+    .filter(([k, r]) => !doc.hidden[k] && !isTestTeam(r.team))
+    .sort((a, b) => b[1].best - a[1].best || a[1].at - b[1].at);
 }
 
 /**
  * Record a finished solo run, idempotently by runId. The board is written to disk before this returns;
  * a write failure rolls the in-memory change back and throws, so the caller can retry later.
  */
-export function recordRun(run: Run): { rank: number; best: number } {
+export function recordRun(run: Run): { rank: number; best: number } | null {
   const key = teamKey(run.team);
-  if (doc.runIds[run.runId]) return standing(key) ?? { rank: 0, best: run.score };
+  if (doc.runIds[run.runId]) return standing(key);
   const prevRow = doc.teams[key] ? { ...doc.teams[key] } : null;
   const prevUpdated = doc.updatedAt;
-  const row = (doc.teams[key] ??= { team: displayTeam(run.team), best: run.score, plays: 0, bestCardId: run.bestCardId, at: run.at });
+  const row = (doc.teams[key] ??= { team: displayTeam(run.team), best: run.score, plays: 0, counted: 0, bestCardId: run.bestCardId, at: run.at });
   row.plays++;
-  if (run.score > row.best) {
-    // strictly higher only: a tie keeps the earlier run
-    row.best = run.score;
-    row.bestCardId = run.bestCardId;
-    row.at = run.at;
-  }
+  const counted = row.counted ?? Math.min(row.plays - 1, COUNTED_RUNS);
+  if (counted < COUNTED_RUNS) {
+    row.counted = counted + 1;
+    if (run.score > row.best) {
+      // strictly higher only: a tie keeps the earlier run
+      row.best = run.score;
+      row.bestCardId = run.bestCardId;
+      row.at = run.at;
+    }
+  } else row.counted = counted;
   doc.runs.push({ ...run, team: row.team });
   doc.runIds[run.runId] = 1;
   const trimmed = doc.runs.length > MAX_RUNS_KEPT ? doc.runs.splice(0, doc.runs.length - MAX_RUNS_KEPT) : [];
@@ -81,7 +92,24 @@ export function recordRun(run: Run): { rank: number; best: number } {
     doc.updatedAt = prevUpdated;
     throw e;
   }
-  return standing(key)!;
+  return standing(key);
+}
+
+/** Hide (or show again) a team on the board; its runs stay saved. Returns false for an unknown team. */
+export function hideTeam(name: string, hidden = true): boolean {
+  const key = teamKey(name);
+  if (!doc.teams[key]) return false;
+  const prev = doc.hidden[key];
+  if (hidden) doc.hidden[key] = 1;
+  else delete doc.hidden[key];
+  try {
+    writeAtomic(FILE, JSON.stringify(doc));
+  } catch (e) {
+    if (prev) doc.hidden[key] = prev;
+    else delete doc.hidden[key];
+    throw e;
+  }
+  return true;
 }
 
 /** The team's current 1-based rank and best score. */

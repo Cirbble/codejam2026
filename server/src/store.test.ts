@@ -114,3 +114,31 @@ test('user strings as keys: __proto__ / constructor labels, devices and days are
   const raw = JSON.parse(readFileSync(join(process.env.DATA_DIR!, 'finds.json'), 'utf8'));
   assert.equal(raw.daily['__proto__'].constructor.tries.toString, 2);
 });
+
+test('test traffic peeks at counts without recording; counts reset zeroes one prompt and frees its dedup marks', () => {
+  const before = store.promptTotals('o-red').total;
+  const peek = store.peekCounts('o-red', 'fire hydrant');
+  assert.equal(peek.totalCount, before + 1);
+  assert.equal(peek.firstEver, false);
+  assert.equal(store.promptTotals('o-red').total, before, 'nothing recorded');
+  assert.ok(before > 0);
+  assert.equal(store.resetPromptCounts('o-red'), before);
+  assert.equal(store.promptTotals('o-red').total, 0);
+  assert.equal(store.promptTotals('o-round').total, 1, 'other prompts untouched');
+  // the same device + label counts again after the reset
+  assert.equal(store.countFind('o-red', 'fire hydrant', 'devA', 'img1').counted, true);
+});
+
+test('crash-window journal: pending squad cards are committed with the card; releasing frees the photo', () => {
+  const card: any = { id: 'cccccccccccccccccccccccc', promptId: 'i-red', promptText: 'x', label: 'mug', title: 'Mug', tier: 'common', points: 10, rarity: 20, sameCount: 1, totalCount: 1, verdict: 'ok', photo: '/p/c.jpg', mode: 'squad', playerId: 'p1', at: 1 };
+  store.saveCard(card, 'devQ', Buffer.from([0xff, 0xd8, 0xff, 0xd9]), 'hq');
+  store.markPendingSquad(card.id, { code: 'ABCD', playerId: 'p1', submissionId: 's1', round: 1 });
+  store.commitFinds();
+  const disk = JSON.parse(readFileSync(join(process.env.DATA_DIR!, 'finds.json'), 'utf8'));
+  assert.ok(disk.pendingSquad[card.id] && disk.cards[card.id], 'journal and card in the same document');
+  assert.equal(store.usedPhoto('i-red', 'devQ', 'hq'), true);
+  store.releaseUsedPhoto(card.id);
+  assert.equal(store.usedPhoto('i-red', 'devQ', 'hq'), false, 'the same photo can be sent again');
+  store.clearPendingSquad(card.id);
+  assert.deepEqual(store.pendingSquads(), []);
+});

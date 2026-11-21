@@ -232,7 +232,6 @@ function Hunt({ room }: { room: RoomView }) {
           <H size={44} style={{ color: C.paper }}>
             {cap(room.prompt?.text)}
           </H>
-          {room.prompt?.examples && <T style={{ color: '#A9B1A2' }}>Like {room.prompt.examples}</T>}
         </View>
         {!room.solo && (
           <T style={{ fontFamily: F.bodyBold, textAlign: 'center', marginTop: 22 }}>

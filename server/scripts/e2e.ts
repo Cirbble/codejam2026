@@ -1,6 +1,8 @@
 /**
  * End-to-end check against a running server with real photos (uses a handful of AI calls; repeats hit the judge cache).
- *   npx tsx scripts/e2e.ts <baseUrl> [imgDir]
+ *   npx tsx scripts/e2e.ts <baseUrl> [imgDir] [--prod]
+ * Refuses a non-localhost URL unless --prod is given. Under --prod it needs STATS_TOKEN (env or ../../.secrets/STATS_TOKEN),
+ * tags every request with x-rarefind-test so finds skip the crowd counts, and uses "E2E ..." team names (kept off the board).
  * imgDir (default scripts/img) holds 768 px JPEGs like the app sends: red_fire_hydrant, laptop_screen, ball, pen, shoe, park_bench.
  */
 import { readFileSync, existsSync } from 'node:fs';
@@ -9,8 +11,22 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import WebSocket from 'ws';
 
-const BASE = (process.argv[2] || 'http://localhost:8787').replace(/\/$/, '');
-const IMG = process.argv[3] || join(dirname(fileURLToPath(import.meta.url)), 'img');
+const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const PROD = process.argv.includes('--prod');
+const BASE = (args[0] || 'http://localhost:8787').replace(/\/$/, '');
+const IMG = args[1] || join(dirname(fileURLToPath(import.meta.url)), 'img');
+const LOCAL = ['localhost', '127.0.0.1', '[::1]'].includes(new URL(BASE).hostname);
+if (!LOCAL && !PROD) {
+  console.error(`Refusing to run against ${BASE}: not localhost. Pass --prod to test production (test data is tagged and kept off the board).`);
+  process.exit(2);
+}
+const tokenFile = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '.secrets', 'STATS_TOKEN');
+const TEST_TOKEN = process.env.STATS_TOKEN || (PROD && existsSync(tokenFile) ? readFileSync(tokenFile, 'utf8').trim() : '');
+if (PROD && !TEST_TOKEN) {
+  console.error('--prod needs STATS_TOKEN so test finds stay out of the crowd counts.');
+  process.exit(2);
+}
+const TEST_HEADERS: Record<string, string> = TEST_TOKEN ? { 'x-rarefind-test': TEST_TOKEN } : {};
 const WS_URL = BASE.replace(/^http/, 'ws') + '/rt';
 const log = (...a: unknown[]) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -23,7 +39,7 @@ const check = (ok: unknown, what: string) => {
 };
 
 async function api(path: string, body?: unknown): Promise<{ status: number; json: any }> {
-  const res = await fetch(BASE + path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const res = await fetch(BASE + path, body ? { method: 'POST', headers: { 'content-type': 'application/json', ...TEST_HEADERS }, body: JSON.stringify(body) } : { headers: TEST_HEADERS });
   return { status: res.status, json: await res.json().catch(() => null) };
 }
 
@@ -119,6 +135,7 @@ const scr = await squadFind(b, laptop);
 log('screen verdict', scr.status, `${Date.now() - t0} ms`, JSON.stringify(scr.json));
 check(scr.json?.accepted === false && scr.json?.reason === 'screen' && scr.json?.triesLeft === 5, 'laptop screen rejected as a screen, 5 tries left');
 
+const topBefore = await api('/api/prompt/i-red/top');
 const subA = hex(8);
 t0 = Date.now();
 const fa = await squadFind(a, hydrant, subA);
@@ -149,7 +166,8 @@ check(rev.length === 2 && rev[0].rarity >= rev[1].rarity, 'reveal has both cards
 check(rev.every((c: any) => Array.isArray(c.sameAs) && c.sameAs.length === 1), `"same as" tags: ${rev.map((c: any) => `${c.playerName}~${c.sameAs}`).join(', ')}`);
 check(a.room.revealMs === 12000 && a.room.endsAt - a.room.now > 10000 && a.room.endsAt - a.room.now <= 12000, `reveal is 6 s + 3 s per card (revealMs ${a.room.revealMs})`);
 const top = await api('/api/prompt/i-red/top');
-check(top.json?.total >= 1 && top.json.top.some((x: any) => x.label === cardA.label), `prompt top: ${JSON.stringify(top.json?.top?.slice(0, 3))}`);
+if (TEST_TOKEN) check(top.json?.total === topBefore.json?.total, `tagged test finds left the crowd counts alone (total ${top.json?.total})`);
+else check(top.json?.total >= 1 && top.json.top.some((x: any) => x.label === cardA.label), `prompt top: ${JSON.stringify(top.json?.top?.slice(0, 3))}`);
 
 // resume from a fresh socket with the saved credentials
 const a2 = await connect({ t: 'resume', code: a.code, playerId: a.id, secret: a.secret }, a.device);
@@ -207,7 +225,7 @@ b.ws.close();
 
 // ---------------- solo (People's Choice) ----------------
 {
-  const teamName = `E2E  Test ${hex(2)}`;
+  const teamName = PROD ? `E2E  Test ${hex(2)}` : `Local  Table ${hex(2)}`;
   const s = await connect({ t: 'create', name: 'Solo', quick: true, solo: true, team: teamName, op: hex(8) });
   await waitFor(s, (r) => !!r, 2000);
   check(s.room?.solo === true && s.room.team === teamName.replace(/\s+/g, ' ') && s.room.totalRounds === 3, `solo room ${s.code} for "${s.room?.team}"`);
@@ -232,10 +250,14 @@ b.ws.close();
   sendWs(s, { t: 'skip' });
   check(await waitFor(s, (r) => r.phase === 'ended'), 'solo run ended after 3 rounds');
   const pts = sf.json?.card?.points;
-  check(typeof s.room.boardRank === 'number' && s.room.boardRank >= 1 && s.room.boardBest === pts, `ended view: boardRank ${s.room.boardRank}, boardBest ${s.room.boardBest}`);
   const bd = await api('/api/board');
   const row = bd.json?.teams?.find((t: any) => t.team === s.room.team);
-  check(row && row.best === pts && row.plays === 1 && row.bestCard?.id === sf.json.card.id && bd.json.updatedAt > 0, 'GET /api/board lists the team with its best card');
+  if (PROD) {
+    check(s.room.boardRank === null && !row && Array.isArray(bd.json?.teams), 'E2E test team stays off the production board');
+  } else {
+    check(typeof s.room.boardRank === 'number' && s.room.boardRank >= 1 && s.room.boardBest === pts, `ended view: boardRank ${s.room.boardRank}, boardBest ${s.room.boardBest}`);
+    check(row && row.best === pts && row.plays === 1 && row.bestCard?.id === sf.json.card.id && bd.json.updatedAt > 0, 'GET /api/board lists the team with its best card');
+  }
   const reset = await fetch(`${BASE}/api/board/reset?token=nope`, { method: 'POST' });
   check(reset.status === 404, 'board reset needs the token');
   s.ws.close();

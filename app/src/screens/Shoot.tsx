@@ -139,9 +139,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
           {phase.k === 'won' && (
             <>
               <FlipReveal card={phase.card} width={cardW} />
-              <T style={{ textAlign: 'center', fontFamily: F.bodyBold, color: C.ink }}>
-                {rarityLine(phase.card)}
-              </T>
+
             </>
           )}
           {(phase.k === 'nope' || phase.k === 'error') && (
@@ -157,7 +155,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
                   {phase.k === 'error' ? 'Not judged yet' : phase.screen ? 'Find the real thing' : 'Not a match'}
                 </H>
                 <T style={{ textAlign: 'center', fontSize: 17, color: C.ink }}>{phase.k === 'nope' ? phase.verdict : phase.message}</T>
-                {phase.k === 'nope' && phase.triesLeft != null && <T style={{ fontFamily: F.bodyBold, color: C.blaze }}>{phase.triesLeft} {phase.triesLeft === 1 ? 'try' : 'tries'} left {mode === 'squad' ? 'this round' : 'today'}</T>}
+                {phase.k === 'nope' && phase.triesLeft != null && <T style={{ fontFamily: F.bodyBold, color: C.blaze }}>{phase.triesLeft === 0 ? 'No tries left' : `${phase.triesLeft} ${phase.triesLeft === 1 ? 'try' : 'tries'} left`} {mode === 'squad' ? 'this round' : 'today'}</T>}
               </View>
             </>
           )}
@@ -197,7 +195,6 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
             <H size={32} style={{ color: C.white }}>
               {cap(promptText)}
             </H>
-            {examples ? <T style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14 }}>Like {examples}</T> : null}
           </View>
         </View>
       </LinearGradient>

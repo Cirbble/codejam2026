@@ -528,7 +528,8 @@ test('unsettle takes back an accepted find whose room snapshot failed; the same 
   assert.equal(room.players.get(ps[2].id)!.score, 10);
   room.unsettle(ps[2].id, 'c', (c.body as any).card);
   assert.equal(room.players.get(ps[2].id)!.score, 0);
-  assert.equal(room.view().reveal!.length, 2);
+  assert.equal(room.phase, 'hunting', 'its early reveal is rolled back too');
+  assert.deepEqual(room.view().players.map((p) => p.found), [true, true, false]);
 });
 
 test('solo run: auto-start flow, 3 quick rounds, opener + no repeats, 4 s reveal, early end, join full, board hook once', () => {
@@ -636,4 +637,42 @@ test('solo: same 3 prompts per day for every team; unique runId; a failed board 
   const squad = new Room('SQD1', false, now, (q) => squadPrompts(q, seeded('x')));
   squad.start(squad.addPlayer('S', 's'.repeat(32)).id);
   assert.equal(squad.runId, null, 'only solo runs get a runId');
+});
+
+test('a failed save of the find that triggered the early reveal rolls the reveal back; Send again works', () => {
+  const { room, ps, advance, now } = setup(false, 2);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  advance(10_000);
+  const deadline = room.endsAt!;
+  find(room, ps[1].id, 'b', 'pigeon', 30, 45);
+  const last = find(room, ps[0].id, 'a', 'bench', 60, 70);
+  assert.equal(room.phase, 'reveal', 'last find ended the round early');
+  assert.equal(room.players.get(ps[1].id)!.score, 30);
+  room.unsettle(ps[0].id, 'a', (last.body as any).card);
+  assert.equal(room.phase, 'hunting', 'back to the open hunt');
+  assert.equal(room.endsAt, deadline, 'original deadline restored');
+  assert.equal(room.view().rounds.length, 0);
+  assert.equal(room.view().revealMs, null);
+  assert.deepEqual(room.view().players.map((p) => p.score), [0, 0], 'reveal points taken back');
+  assert.equal(room.view().players.find((p) => p.id === ps[1].id)!.found, true, 'the other find stays');
+  const retry = find(room, ps[0].id, 'a', 'bench', 60, 70);
+  assert.equal((retry.body as any).accepted, true, 'same submissionId is accepted on retry');
+  assert.equal(room.phase, 'reveal');
+  assert.deepEqual(room.view().players.map((p) => p.score), [60, 30]);
+  assert.ok(now() < deadline);
+});
+
+test('startup reconciliation: restoreCredit credits an open round, refuses a closed one', () => {
+  const { room, ps, advance } = setup(false, 2);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const c = card('lost glove', 'P0', 30, 50, ps[0].id);
+  assert.equal(room.restoreCredit(ps[0].id, 'crash-sub', 1, c), true);
+  assert.equal(room.found.get(ps[0].id)?.id, c.id);
+  assert.equal(room.precheck(ps[0].id, 'crash-sub').kind, 'prior', 'the retry gets the original answer');
+  assert.equal(room.restoreCredit(ps[0].id, 'crash-sub', 1, c), true, 'idempotent');
+  room.skip(ps[0].id);
+  room.skip(ps[0].id);
+  assert.equal(room.restoreCredit(ps[1].id, 'old', 1, card('x', 'P1', 10, 20, ps[1].id)), false, 'round 1 is closed');
 });

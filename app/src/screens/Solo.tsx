@@ -1,10 +1,10 @@
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useEffect, useState } from 'react';
-import { FlatList, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { FlatList, Linking, Platform, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';
 import { BoardRow, cap, fetchBoard, type RoomView } from '../api';
-import { CardBack, GameCard } from '../components/GameCard';
+import { EmptySlot, GameCard } from '../components/GameCard';
 import { Bar, Button, H, Label, Mono, Screen, T } from '../components/ui';
 import { useNav } from '../nav';
 import { useSquad } from '../squad';
@@ -18,6 +18,7 @@ export function SoloStart() {
   const [team, setTeam] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [camBlocked, setCamBlocked] = useState(false);
   useEffect(() => {
     AsyncStorage.multiGet(['rarefind.team', 'rarefind.name'])
       .then(([[, t], [, n]]) => {
@@ -33,7 +34,7 @@ export function SoloStart() {
   const n = name.trim().slice(0, 16) || t;
   return (
     <Screen>
-      <Bar onBack={nav.back} title="Quick play" right={<Button title="Board" icon="award" kind="line" onPress={() => nav.push({ name: 'board' })} style={{ height: 44, paddingHorizontal: 12, borderRadius: 13 }} />} />
+      <Bar onBack={nav.back} title="Quick play" right={<Button title="Team board" icon="award" kind="line" onPress={() => nav.push({ name: 'board' })} style={{ height: 44, paddingHorizontal: 12, borderRadius: 13 }} />} />
       <ScrollView contentContainerStyle={{ gap: 22, paddingTop: 8 }} keyboardShouldPersistTaps="handled">
         <View style={styles.rules}>
           <H size={30} style={{ color: C.paper }}>
@@ -57,10 +58,28 @@ export function SoloStart() {
             AsyncStorage.multiSet([['rarefind.team', t], ['rarefind.name', name.trim()]]).catch(() => {});
             setBusy(true);
             // ask for the camera now, so the permission prompt doesn't eat round one
-            if (!perm?.granted && perm?.canAskAgain !== false) await requestPerm().catch(() => null);
+            let granted = !!perm?.granted;
+            if (!granted && perm?.canAskAgain !== false) granted = !!(await requestPerm().catch(() => null))?.granted;
+            if (!granted) {
+              setBusy(false);
+              setCamBlocked(true);
+              return;
+            }
+            if (squad.session) {
+              squad.leave(); // a squad you were in is left properly, not orphaned
+              await new Promise((r) => setTimeout(r, 300));
+            }
             squad.solo(n, t);
           }}
         />
+        {camBlocked && (
+          <View style={{ gap: 10 }}>
+            <T style={{ color: C.blaze, fontFamily: F.bodyBold, textAlign: 'center' }}>
+              {Platform.OS === 'web' ? 'Allow the camera for this site in your browser, then try again.' : 'Quick play needs the camera.'}
+            </T>
+            {Platform.OS !== 'web' && <Button title="Open settings" kind="line" onPress={() => Linking.openSettings()} />}
+          </View>
+        )}
         {squad.error && <T style={{ color: C.blaze, fontFamily: F.bodyBold, textAlign: 'center' }}>{squad.error}</T>}
       </ScrollView>
     </Screen>
@@ -74,6 +93,12 @@ export function SoloResults({ room }: { room: RoomView }) {
   const me = room.players[0];
   const cards = room.rounds.flatMap((r) => r.cards);
   const best = [...cards].sort((a, b) => b.points - a.points || b.rarity - a.rarity || a.at - b.at)[0];
+  const again = () => {
+    const team = room.team ?? '';
+    const name = me?.name ?? team;
+    squad.leave();
+    setTimeout(() => squad.solo(name, team), 300);
+  };
   return (
     <Screen>
       <Bar onBack={() => { squad.leave(); nav.reset(); }} title={room.team ?? 'Quick play'} />
@@ -95,8 +120,9 @@ export function SoloResults({ room }: { room: RoomView }) {
             return c ? (
               <GameCard key={i} card={c} width={Math.min(104, (width - 60) / 3)} flat live={false} />
             ) : (
-              <View key={i} style={{ opacity: 0.55 }}>
-                <CardBack width={Math.min(104, (width - 60) / 3)} />
+              <View key={i} style={{ alignItems: 'center', gap: 6 }}>
+                <EmptySlot width={Math.min(104, (width - 60) / 3)} />
+                <Mono style={{ color: C.ink }}>No find</Mono>
               </View>
             );
           })}
@@ -108,9 +134,10 @@ export function SoloResults({ room }: { room: RoomView }) {
         )}
       </ScrollView>
       <View style={{ gap: 10 }}>
-        <Button title="See the board" icon="award" onPress={() => nav.push({ name: 'board' })} />
+        <Button title="Play again" icon="rotate-ccw" onPress={again} />
         <View style={{ flexDirection: 'row', gap: 12 }}>
-          <Button title="Play outside as a squad" icon="users" kind="line" onPress={() => { squad.leave(); nav.reset({ name: 'squad' }); }} style={{ flex: 1, paddingHorizontal: 10 }} />
+          <Button title="Team board" icon="award" kind="line" onPress={() => nav.push({ name: 'board' })} style={{ flex: 1, paddingHorizontal: 10 }} />
+          <Button title="Squad" icon="users" kind="line" onPress={() => { squad.leave(); nav.reset({ name: 'squad' }); }} style={{ flex: 1, paddingHorizontal: 10 }} />
         </View>
         <Button title="Done" kind="quiet" onPress={() => { squad.leave(); nav.reset(); }} />
       </View>

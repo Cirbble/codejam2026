@@ -10,7 +10,7 @@ Each accepted find has a **label**: a short lowercase singular noun phrase from 
 
 - The AI also returns `aiRarity` (0 to 100), its estimate of how uncommon the find is for that prompt.
 - The crowd count comes from every accepted find for that prompt, across all players, days and squads: `crowd = 100 * (1 - sameLabel / total)`, where `sameLabel` includes this find.
-- Blend: `w = min(1, (total - 1) / 25)` and `rarity = round(w * crowd + (1 - w) * aiRarity)`. So the AI decides at first and the crowd takes over as data arrives.
+- Blend: `w = min(0.5, (total - 1) / 25)` and `rarity = round(w * crowd + (1 - w) * aiRarity)`. So the AI decides at first, and the crowd count blends in (up to half of the score) as data arrives.
 - The AI judge gets the 40 most common labels found so far for that prompt. When the find is the same thing as one of them, it reuses that exact label, so counts don't split over wording.
 
 | Tier | Rarity | Points |

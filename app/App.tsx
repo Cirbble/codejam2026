@@ -24,7 +24,8 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 /** Quick play shows its own start screen until a solo room exists, then the shared room screens. */
 function SoloGate() {
   const squad = useSquad();
-  if (squad.session && (!squad.room || squad.room.solo)) return <Squad />;
+  if (squad.session && squad.room?.solo) return <Squad />;
+  if (squad.session && !squad.room && squad.pendingSolo) return <Squad />;
   return <SoloStart />;
 }
 

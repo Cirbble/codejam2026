@@ -11,11 +11,11 @@ import { IP_HOURLY_JUDGE, ipAttempts, judgePhoto, judgeStats, type Judgement } f
 import { canonicalLabel, normalizeLabel, scoreFind, titleFor } from './rarity.js';
 import { dailyPrompts, nextTorontoMidnight, promptById, soloPrompts, squadPrompts, torontoDay } from './prompts.js';
 import { thumbnail, THUMB_W } from './thumbs.js';
-import { DATA_DIR, PHOTO_DIR, byDevice, cards, commitFinds, countFind, dailyEntry, dailyEntryMut, daily, dropCardsWithoutPhotos, flushAll, usedPhoto, promptTotals, saveCard, topLabels, writeAtomic } from './store.js';
+import { DATA_DIR, PHOTO_DIR, byDevice, cards, commitFinds, countFind, peekCounts, markPendingSquad, clearPendingSquad, pendingSquads, releaseUsedPhoto, resetPromptCounts, dailyEntry, dailyEntryMut, daily, dropCardsWithoutPhotos, flushAll, usedPhoto, promptTotals, saveCard, topLabels, writeAtomic } from './store.js';
 import { MAX_TRIES } from './room.js';
 import { Lru } from './lru.js';
 import { dict } from './dict.js';
-import { boardView, displayTeam, recordRun, resetBoard, teamKey } from './board.js';
+import { boardView, displayTeam, hideTeam, recordRun, resetBoard, teamKey } from './board.js';
 import type { Card, ClientMsg, ErrorCode, FindBody, Prompt, Reply, ServerMsg, WsErrorCode } from './types.js';
 
 const PORT = Number(process.env.PORT || 8787);
@@ -124,6 +124,29 @@ app.get('/api/board', (_req, res) => {
   res.setHeader('cache-control', 'no-store');
   res.json(boardView());
 });
+const adminOk = (req: express.Request) => !!process.env.STATS_TOKEN && req.query.token === process.env.STATS_TOKEN;
+// moderation: hide a team (its runs stay saved); ?hidden=0 shows it again
+app.post('/api/board/hide', (req, res) => {
+  if (!adminOk(req)) return res.sendStatus(404);
+  const team = String(req.query.team ?? '');
+  try {
+    if (!hideTeam(team, req.query.hidden !== '0')) return res.status(404).json({ error: 'bad_request', message: 'No such team.' });
+  } catch {
+    return res.status(503).json({ error: 'ai_down', message: 'Could not save. Try again.' });
+  }
+  res.json({ ok: true, team: displayTeam(team), hidden: req.query.hidden !== '0' });
+});
+// moderation: zero one prompt's crowd counts
+app.post('/api/counts/reset', (req, res) => {
+  if (!adminOk(req)) return res.sendStatus(404);
+  const prompt = String(req.query.prompt ?? '');
+  if (!promptById(prompt)) return res.status(404).json({ error: 'bad_request', message: 'No such prompt.' });
+  try {
+    res.json({ ok: true, prompt, cleared: resetPromptCounts(prompt) });
+  } catch {
+    res.status(503).json({ error: 'ai_down', message: 'Could not save. Try again.' });
+  }
+});
 app.post('/api/board/reset', (req, res) => {
   const token = process.env.STATS_TOKEN;
   if (!token || req.query.token !== token) return res.sendStatus(404);
@@ -177,7 +200,7 @@ app.post('/api/find', async (req, res) => {
   if (!validDevice(device) || !submissionId) return res.status(400).json({ error: 'bad_request', message: 'Missing device or submissionId.' });
   const key = `${device}:${submissionId}`;
   const out = await (submissions.get(key) ??
-    handleFind(b, device, submissionId, clientIp(req.headers, req.socket.remoteAddress), key).catch((e) => {
+    handleFind(b, device, submissionId, clientIp(req.headers, req.socket.remoteAddress), key, isTestTraffic(req.headers)).catch((e) => {
       console.error('[find]', e);
       return fail(500, 'ai_down', 'Something went wrong. Try again.');
     }));
@@ -239,10 +262,16 @@ const usedPhotoReply = (triesLeft: number): Reply => ({ status: 200, body: { acc
 const hashOf = (jpeg: Buffer) => createHash('sha1').update(jpeg).digest('hex');
 
 /** Count, score and durably store an accepted find. Throws (with all in-memory state undone) if it can't be saved. */
-function mintCard(prompt: Prompt, j: Judgement, jpeg: Buffer, device: string, extra: Partial<Card>, crowdKey = device): { card: Card; undo: () => void } {
+/** e2e traffic sends x-rarefind-test: <STATS_TOKEN>; its finds never touch the crowd counts. */
+function isTestTraffic(headers: IncomingHttpHeaders): boolean {
+  const token = process.env.STATS_TOKEN;
+  return !!token && headers['x-rarefind-test'] === token;
+}
+
+function mintCard(prompt: Prompt, j: Judgement, jpeg: Buffer, device: string, extra: Partial<Card>, crowdKey = device, test = false): { card: Card; undo: () => void } {
   const label = canonicalLabel(normalizeLabel(j.label), promptTotals(prompt.id).map);
   const imageHash = hashOf(jpeg);
-  const count = countFind(prompt.id, label, crowdKey, imageHash);
+  const count = test ? peekCounts(prompt.id, label) : countFind(prompt.id, label, crowdKey, imageHash);
   const { sameCount, totalCount, firstEver } = count;
   const s = scoreFind(j.aiRarity, sameCount, totalCount, firstEver);
   const id = randomBytes(12).toString('hex');
@@ -281,7 +310,7 @@ function mintCard(prompt: Prompt, j: Judgement, jpeg: Buffer, device: string, ex
 
 const reqHits = new Map<string, number[]>();
 
-async function handleFind(b: any, device: string, submissionId: string, ip: string, key: string): Promise<Reply> {
+async function handleFind(b: any, device: string, submissionId: string, ip: string, key: string, test = false): Promise<Reply> {
   // cheap per-IP request cap before any decoding or lookups
   const now = Date.now();
   const hits = (reqHits.get(ip) ?? []).filter((t) => now - t < 60_000);
@@ -291,7 +320,7 @@ async function handleFind(b: any, device: string, submissionId: string, ip: stri
   const jpeg = decodeImage(b.image);
   if (!jpeg) return fail(400, 'bad_request', 'Photo must be a JPEG under 2 MB.');
   const b64 = jpeg.toString('base64');
-  if (b.mode === 'squad') return squadFind(b, device, submissionId, ip, jpeg, b64, key);
+  if (b.mode === 'squad') return squadFind(b, device, submissionId, ip, jpeg, b64, key, test);
   if (b.mode !== 'daily') return fail(400, 'bad_request', 'Unknown mode.');
 
   const day = torontoDay();
@@ -324,7 +353,7 @@ async function handleFind(b: any, device: string, submissionId: string, ip: stri
     if (!o.accepted) return keep({ status: 200, body: { accepted: false, reason: o.reason, verdict: o.verdict, triesLeft: Math.max(0, MAX_TRIES - entry.tries[prompt.id]) } });
     let made: ReturnType<typeof mintCard> | undefined;
     try {
-      made = mintCard(prompt, r.j, jpeg, device, { mode: 'daily', day });
+      made = mintCard(prompt, r.j, jpeg, device, { mode: 'daily', day }, device, test);
       const reply: Reply = { status: 200, body: { accepted: true, card: made.card } };
       entry.cards[prompt.id] = made.card.id;
       (entry.subs ??= dict())[submissionId] = reply;
@@ -345,7 +374,7 @@ async function handleFind(b: any, device: string, submissionId: string, ip: stri
   });
 }
 
-async function squadFind(b: any, device: string, submissionId: string, ip: string, jpeg: Buffer, b64: string, key: string): Promise<Reply> {
+async function squadFind(b: any, device: string, submissionId: string, ip: string, jpeg: Buffer, b64: string, key: string, test = false): Promise<Reply> {
   const room = getRoom(b.code);
   if (!room) return fail(409, 'closed', 'That squad is gone.');
   const player = room.auth(b.playerId, b.secret);
@@ -378,10 +407,13 @@ async function squadFind(b: any, device: string, submissionId: string, ip: strin
     reply = room.settle(player.id, submissionId, pre.round, outcomeOf(r.j), () => {
       const dev = player.device || device;
       // solo runs count crowd stats per (device, team): one phone passed between tables still counts each team
-      made = mintCard(pre.prompt, r.j, jpeg, dev, { mode: 'squad', playerName: player.name, playerId: player.id }, room.solo && room.team ? `${dev}|team:${teamKey(room.team)}` : dev);
+      made = mintCard(pre.prompt, r.j, jpeg, dev, { mode: 'squad', playerName: player.name, playerId: player.id }, room.solo && room.team ? `${dev}|team:${teamKey(room.team)}` : dev, test);
+      // journal it in the same atomic commit: a crash before the room snapshot is reconciled on startup
+      markPendingSquad(made.card.id, { code: room.code, playerId: player.id, submissionId, round: pre.round });
       try {
         commitFinds(); // atomic write of the find metadata (photo already on disk)
       } catch (e) {
+        clearPendingSquad(made.card.id);
         made.undo();
         made = undefined;
         throw e;
@@ -395,9 +427,11 @@ async function squadFind(b: any, device: string, submissionId: string, ip: strin
   if (made && 'accepted' in reply.body && reply.body.accepted) {
     try {
       saveRooms(true); // the room snapshot must hold the find too
+      clearPendingSquad(made.card.id);
     } catch (err) {
       console.error('[find] room snapshot failed', (err as Error).message);
       room.unsettle(player.id, submissionId, made.card);
+      clearPendingSquad(made.card.id);
       made.undo();
       commitFinds(false); // best effort: take the card back out of finds.json
       broadcast(room, true);
@@ -708,6 +742,31 @@ function saveRooms(strict = false) {
     if (strict) throw e;
   }
 }
+/**
+ * Crash window between the find commit and the room snapshot: credit journaled squad/solo cards whose round is
+ * still open, otherwise free the photo so the same picture can be sent again.
+ */
+function reconcileSquadFinds() {
+  let credited = 0;
+  let released = 0;
+  for (const [cardId, p] of pendingSquads()) {
+    const card = cards.data[cardId];
+    const room = rooms.get(p.code);
+    if (card && room?.restoreCredit(p.playerId, p.submissionId, p.round, card)) credited++;
+    else {
+      releaseUsedPhoto(cardId);
+      submissions.delete(`${card?.playerId ? (room?.players.get(card.playerId)?.device ?? '') : ''}:${p.submissionId}`);
+      released++;
+    }
+    clearPendingSquad(cardId);
+  }
+  if (credited || released) {
+    console.warn(`[reconcile] squad finds: ${credited} credited, ${released} released for retry`);
+    commitFinds(false);
+    saveRooms();
+  }
+}
+
 function loadRooms() {
   try {
     if (!existsSync(ROOMS_FILE)) return;
@@ -722,6 +781,7 @@ function loadRooms() {
   }
 }
 loadRooms();
+reconcileSquadFinds();
 {
   const dropped = dropCardsWithoutPhotos();
   if (dropped) console.warn(`[store] dropped ${dropped} cards whose photo is missing`);

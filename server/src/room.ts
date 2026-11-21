@@ -276,7 +276,11 @@ export class Room {
     this.touch();
   }
 
+  /** The find whose settle() triggered the current early reveal (so a failed save can roll it back). */
+  private earlyEnd: { key: string; round: number; huntEndsAt: number | null } | null = null;
+
   private toHunting() {
+    this.earlyEnd = null;
     this.phase = 'hunting';
     this.found.clear();
     this.tries.clear();
@@ -345,6 +349,25 @@ export class Room {
   unsettle(playerId: string, submissionId: string, card: Card) {
     const key = `${playerId}:${submissionId}`;
     if (this.found.get(playerId)?.id !== card.id) return;
+    const early = this.earlyEnd;
+    if (early && early.key === key && this.phase === 'reveal' && this.round === early.round) {
+      // this find triggered the early reveal: roll the transition back so "Send again" lands in an open hunt
+      for (const [pid, c] of this.found) {
+        const pl = this.players.get(pid);
+        if (pl) pl.score = Math.max(0, pl.score - c.points);
+      }
+      this.rounds.pop();
+      this.phase = 'hunting';
+      this.endsAt = early.huntEndsAt;
+      this.huntEndedAt = null;
+      this.revealMs = null;
+      this.earlyEnd = null;
+      this.replies.delete(key);
+      this.found.delete(playerId);
+      this.tries.set(playerId, Math.max(0, (this.tries.get(playerId) ?? 1) - 1));
+      this.touch();
+      return;
+    }
     this.replies.delete(key);
     this.found.delete(playerId);
     this.tries.set(playerId, Math.max(0, (this.tries.get(playerId) ?? 1) - 1));
@@ -352,6 +375,22 @@ export class Room {
     if (p && this.phase !== 'hunting') p.score = Math.max(0, p.score - card.points); // points were applied at the reveal
     if (this.phase === 'reveal') this.syncRoundCards();
     this.touch();
+  }
+
+  /**
+   * Startup reconciliation: a squad/solo card was committed but the crash came before the room snapshot.
+   * Credit it if its round is still open; otherwise return false so the caller frees the photo for a retry.
+   */
+  restoreCredit(playerId: string, submissionId: string, round: number, card: Card): boolean {
+    const key = `${playerId}:${submissionId}`;
+    if (this.found.get(playerId)?.id === card.id || this.replies.has(key)) return true; // already credited
+    if (this.phase !== 'hunting' || this.round !== round || !this.players.has(playerId) || this.found.has(playerId)) return false;
+    this.found.set(playerId, card);
+    this.tries.set(playerId, (this.tries.get(playerId) ?? 0) + 1);
+    this.replies.set(key, { status: 200, body: { accepted: true, card } });
+    this.touch();
+    this.checkEarlyEnd();
+    return true;
   }
 
   triesLeft(playerId: string) {
@@ -398,7 +437,11 @@ export class Room {
       this.syncRoundCards();
       this.revealMs = this.solo ? SOLO_REVEAL_MS : revealMsFor(this.found.size);
       this.endsAt = Math.max(this.endsAt ?? 0, (this.huntEndedAt ?? this.now()) + this.revealMs, this.now() + LATE_SHOW_MS);
-    } else this.checkEarlyEnd();
+    } else {
+      const huntEndsAt = this.endsAt;
+      this.checkEarlyEnd();
+      if ((this.phase as Phase) === 'reveal') this.earlyEnd = { key, round: this.round, huntEndsAt };
+    }
     return reply;
   }
 

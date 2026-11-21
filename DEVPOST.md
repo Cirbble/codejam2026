@@ -16,7 +16,7 @@ A prompt names a kind of thing: "something red", "something someone lost", "a pa
 - **Judge:** Gemini 3.8 Flash with a strict JSON schema. It returns whether the photo matches, whether it is a screen or a print, a canonical label and a rarity estimate. Photos are resized on the phone, and results are cached by image hash.
 
 ## Challenges
-- **Rarity with no data yet.** The first players have nobody to compare against. The score starts as the AI's estimate and blends toward crowd counts as finds arrive.
+- **Rarity with no data yet.** The first players have nobody to compare against. The score starts as the AI's estimate and blends in crowd counts, up to half, as finds arrive.
 - **Same thing, different words.** "Red hydrant" and "fire hydrant" have to be one answer. The judge sees the labels already found for that prompt and reuses one when it fits.
 - **Fair rounds.** Judging takes a few seconds, so a photo sent before the buzzer still counts after it.
 - **Cheating.** Photos come from the camera only, and screens, prints and renders are rejected. Repeat photos don't move the rarity stats.
