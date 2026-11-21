@@ -1,0 +1,19 @@
+**7.5/10.** The main judging risk is track fit: Rage explicitly requires “phone out,” and an indoor joystick demo cannot establish the away-from-phone experience. Show a short outdoor clip with locked phones, a reminder, and a real find.
+
+Prioritized findings:
+
+1. **P1 — Locked teammates can miss the entire demo Rage.** An accepted photo changes the hunt deadline from up to 40 seconds away to four seconds away. A suspended teammate retains the original local notification. Reproduced in memory. **Fix:** preserve the original deadline whenever a teammate is pocketed/disconnected; otherwise acknowledge the revised deadline before advancing. [game.ts:741](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:741), [Game.tsx:94](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/screens/Game.tsx:94).
+
+2. **P1 — The demo’s first strike can target a disconnected judge.** Target selection includes disconnected humans. I reproduced a strike 47 metres from the presenter with no presenter warning, undermining the planned live dodge moment. **Fix:** choose the first demo target from connected humans with fresh, trusted positions. [game.ts:499](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:499).
+
+3. **P2 — Reconnect restores the screen but misses the coach.** Receiving state does not replay the current prompt or announce that Rage has started; speech depends on transient events. Only strike warnings have recovery logic. **Fix:** reconcile coach output from authoritative state, deduplicated by round/phase, and speak the current objective once after reconnect. [GameProvider.tsx:126](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/net/GameProvider.tsx:126), [coach.ts:76](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/game/coach.ts:76).
+
+4. **P2 — Demo/GPS mismatch has a lobby recovery trap.** A guest using demo location can remain simulated after the host chooses a normal game, particularly without location permission. Their fresh simulated fix hides the location controls, while Start rejects the mixed modes. **Fix:** keep an explicit location-source control available in the lobby, including permission/settings recovery. [Lobby.tsx:40](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/screens/Lobby.tsx:40), [Lobby.tsx:197](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/screens/Lobby.tsx:197).
+
+5. **P2 — The Grass Report undercounts the activity you encourage.** GPS uses a [foreground-only watcher](https://docs.expo.dev/versions/v58.0.0/sdk/location/#locationwatchpositionasyncoptions-callback-errorhandler). Locked walking becomes, at best, a straight-line displacement after resume; a loop can register almost nothing. **Fix:** label distance as an estimate from available fixes and lead with pocketed hunt time; add supported step history only if time permits. [LocationProvider.tsx:111](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/net/LocationProvider.tsx:111), [game.ts:229](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:229).
+
+6. **P2 — Public WebSocket connections have no admission bound.** Unauthenticated sockets remain in `conns` indefinitely if they answer pings. Per-socket message limits do not bound connection count. **Fix:** require hello/watch authentication within five seconds and cap concurrent connections per IP and globally. [index.ts:190](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/index.ts:190).
+
+7. **P2 — The committed iPhone download path is unfinished.** `ios` is empty, leaving the landing page’s TestFlight button disabled. **Fix:** populate and verify the public invite link; preinstall the exact demo build on every judging phone. [links.json:3](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/public/links.json:3).
+
+Both typechecks passed. Review used current code, existing screenshots, and in-memory engine checks; native camera, audio, and lock-screen behavior were not device-tested. No files modified.

@@ -1,0 +1,21 @@
+**7/10.** The main judging risk is that the indoor demo presents an AI photo hunt plus joystick gameplay; the “away from your phone” benefit needs stronger evidence.
+
+Prioritized findings:
+
+1. **P1 — Lock-screen reminders use obsolete deadlines.** Demo acceptance shortens the current hunt, but the reminder effect watches only prompt ID and connection status. A locked teammate can miss Rage and receive the reminder afterward. **Fix:** reschedule on deadline changes; cancel obsolete reminders on phase transitions. [Game.tsx:79](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/screens/Game.tsx:79), [game.ts:723](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:723)
+
+2. **P1 — Reconnecting can cause an effectively unwarned hit.** Warning timestamps survive disconnection. Reproduced reconnecting 0.5 seconds before impact and immediately losing a heart; previous spoken-warning deduplication can also suppress another warning. **Fix:** invalidate warnings on disconnect and require a fresh warning with sufficient escape time after reconnect. [game.ts:244](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:244), [game.ts:547](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:547)
+
+3. **P1 — Demo recovery can exceed stage time and remain unwinnable.** Reproduced: miss round one, feed round two 30 seconds in, then lose at 155 seconds with one boss HP remaining. The extension leaves insufficient time to open another required hunt. **Fix:** reserve complete phase budgets for retries; provide a stage preset that reliably finishes within roughly 90 seconds. [game.ts:657](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:657), [game.ts:669](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:669)
+
+4. **P1 — Dodge awards victory without participation.** Reproduced a 60-second win with the human disconnected throughout, three hearts, and zero metres walked. Stale-location immunity combines with an “alive” victory check. **Fix:** retain immunity, but require meaningful trusted participation and a recently connected human for victory; otherwise report an interrupted game. [game.ts:411](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:411)
+
+5. **P2 — “Phone away” is inferred from network failure.** Any disconnected hunt time counts as pocket time, while directly locking a still-connected phone can initially count as screen time. Foreground-only GPS also misses much of the intended pocketed walking. **Fix:** report explicit app lifecycle/pocket intervals, distinguish unknown time, and label distance as an estimate. For judging, show a short real outdoor, locked-phone demonstration. [game.ts:403](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:403), [LocationProvider.tsx:111](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/net/LocationProvider.tsx:111)
+
+6. **P2 — First camera permission consumes the timed demo.** Camera permission and initialization happen after opening Snap during the hunt. **Fix:** add a camera readiness check before Start; rehearse two physical phones through capture, lock, notification, and resume. The server E2E does not exercise these paths. [Snap.tsx:50](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/screens/Snap.tsx:50)
+
+7. **P2 — Lobby spectators receive an exact location.** Player coordinates are hidden, but `center` remains precise; with one player it reveals that player’s position. **Fix:** remove the lobby center from spectator state and fit the map when countdown starts. [game.ts:889](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:889)
+
+8. **P2 — Android presents conflicting directions.** Android uses the north-up radar, which ignores heading, while the instruction arrow rotates relative to device heading. **Fix:** use one orientation consistently across radar, escape arrow, and directional text. [GameMap.android.tsx:1](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/components/GameMap.android.tsx:1), [Game.tsx:122](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/screens/Game.tsx:122)
+
+No files changed. Both TypeScript checks and all 17 engine tests passed; handset behavior was reviewed from source, not device-tested.

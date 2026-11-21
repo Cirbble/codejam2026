@@ -1,0 +1,23 @@
+**7.5/10.** Touch Grass fit rests on the hunt/pocket loop; Rage explicitly requires the phone out. At an indoor table, simulated movement risks making this look like another screen game. Show a short outdoor, locked-phone sequence before the live demo.
+
+Most important first:
+
+1. **P1 — Redeploy recovery can cause an almost immediate hit.** Restoring preserves old warning timestamps, so reconnecting with fresh GPS provides no new escape allowance. Reproduced: damage after only **500 ms** back. **Fix:** clear restored humans’ warning records and grant a fresh warning/escape window before penalties. [game.ts:882](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:882), [game.ts:555](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:555).
+
+2. **P1 — Native demo readiness remains unproven by the E2E.** The script bypasses camera capture, permissions, notifications, and mobile reconnect logic; the committed iPhone installation link is empty. **Fix:** install the actual judging build on two phones now, rehearse capture → lock → notification → resume → victory, and populate the installation link. [links.json:3](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/public/links.json:3), [e2e.ts:65](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/scripts/e2e.ts:65).
+
+3. **P1 — The stage demo has an unbounded recovery path relative to its slot.** Missing a demo hunt adds **75 seconds**, turning the 110-second match into 185 seconds before countdown or presentation. **Fix:** use a separate stage preset with a strict time budget, prejoined phones, and a rehearsed recorded finale when live judging stalls. [game.ts:663](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:663).
+
+4. **P2 — Notification cancellation can falsely report “safe to lock.”** An obsolete scheduling operation sets `armed = true` after cancellation, then cancels its own notification. Reproduced: `notificationsReady()` returns true with its reminder canceled. **Fix:** check the generation before setting `armed`; stale operations must never modify readiness. [coach.ts:197](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/game/coach.ts:197).
+
+5. **P2 — Rage-only can declare a healthy walking player the loser.** Victory requires `movingSec > 0`, but movement only accumulates below 25 m accuracy while GPS remains “trusted” through 30 m. Reproduced: approximately 78 m walked at 27 m accuracy, three hearts, **loss**. **Fix:** base survival victory on surviving humans; keep movement statistics separate. [game.ts:221](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:221), [game.ts:419](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:419).
+
+6. **P2 — Restored sessions lack usable GPS recovery.** Automatic restoration bypasses Home’s permission request. During gameplay, revoked permission or a failed watcher has no Settings/Retry action. **Fix:** expose location recovery in Game and explain when a match must be restarted for demo location. [GameProvider.tsx:53](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/net/GameProvider.tsx:53), [Game.tsx:242](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/screens/Game.tsx:242).
+
+7. **P2 — Pocketed walking is undercounted.** Location updates are foreground-only; the distance calculation bridges gaps using straight-line displacement. Walking a loop with the phone locked can record nearly nothing. **Fix:** label distance as sampled GPS distance and make pocket time the primary track-fit metric; demonstrate real walking separately. [LocationProvider.tsx:111](C:/Users/Benjamin/Desktop/Codejam16/krillion/app/src/net/LocationProvider.tsx:111), [game.ts:226](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/game.ts:226).
+
+8. **P2 — Rate limits depend on spoofable forwarded-IP handling.** HTTP trusts every proxy, and WebSocket connections directly trust the first forwarded address. **Fix:** configure the verified proxy boundary consistently for both transports; retain global room and AI-call limits independently of IP. [index.ts:54](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/index.ts:54), [index.ts:191](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/index.ts:191).
+
+9. **P3 — Photo allowance silently carries across “Play again.”** `roomJudged` never resets, so repeated games eventually hit a squad allowance that restarting the game cannot recover. **Fix:** explicitly scope the allowance to a game and reset it on successful start; maintain a separate provider spending cap. [index.ts:108](C:/Users/Benjamin/Desktop/Codejam16/krillion/server/src/index.ts:108).
+
+Read-only verification: both projects type-check; all 18 engine tests pass. Device behavior was not exercised.

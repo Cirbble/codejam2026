@@ -1,0 +1,80 @@
+{
+  "expo": {
+    "name": "Squall",
+    "slug": "krillion",
+    "owner": "benjamingurevitch",
+    "scheme": "squall",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#071115",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.benjamingurevitch.krillion",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Squall uses your location to place you in the storm zone, warn you about cells and let teammates find you.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.benjamingurevitch.krillion",
+      "adaptiveIcon": {
+        "backgroundColor": "#071115",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "VIBRATE"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "name": "Squall",
+      "backgroundColor": "#071115",
+      "themeColor": "#071115"
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "backgroundColor": "#071115"
+        }
+      ],
+      "expo-status-bar",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Squall uses your location to place you in the storm zone, warn you about cells and let teammates find you."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#F2C14A"
+        }
+      ],
+      "expo-audio"
+    ],
+    "extra": {
+      "serverUrl": "https://krillion-production-ce39cedf.up.railway.app",
+      "eas": {
+        "projectId": "c1614fc1-f647-423a-8999-502c3240a921"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c1614fc1-f647-423a-8999-502c3240a921"
+    }
+  }
+}

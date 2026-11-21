@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.secrets/
+.env
+*.log
+council/*.err
+app/.expo/
+app/ios/
+app/android/
+app/web-build/
+app/dist/
+server/data/
+server/data-uitest/
