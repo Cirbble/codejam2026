@@ -1,0 +1,66 @@
+{
+ "value": {
+  "vendor_name": "Aurora Mobile Business",
+  "vendor_address": "5804 Granville St, Toronto ON L4J 6S4",
+  "vendor_gst_hst_number": "511304707RT0001",
+  "vendor_qst_number": null,
+  "doc_type": "invoice",
+  "invoice_number": "AMB-2611-5520",
+  "invoice_date": "2026-11-03",
+  "due_date": "2026-11-24",
+  "terms": null,
+  "po_number": null,
+  "credit_note_ref": null,
+  "currency": "CAD",
+  "bill_to_address": "Harborline Logistics Inc.\n88 Queens Quay W, Suite 1400\nToronto ON M5J 0B8",
+  "ship_to_address": null,
+  "ship_to_province": "ON",
+  "line_items": [
+   {
+    "description": "Monthly fleet plan - 42 lines (contracted)",
+    "quantity": null,
+    "unit_price": null,
+    "amount": 2150
+   },
+   {
+    "description": "Plan price adjustment",
+    "quantity": null,
+    "unit_price": null,
+    "amount": 215
+   }
+  ],
+  "subtotal": 2365,
+  "taxes": [
+   {
+    "type": "HST",
+    "rate_percent": 13,
+    "amount": 307.45
+   }
+  ],
+  "total": 2672.45,
+  "bank": {
+   "institution": "010",
+   "transit": "26841",
+   "account": "377190807"
+  },
+  "payment_instructions": "Pay by EFT: Inst. 010 Transit 26841 Acct 377190807",
+  "early_payment_discount": null,
+  "language": "en"
+ },
+ "usage": {
+  "promptTokenCount": 618,
+  "candidatesTokenCount": 532,
+  "totalTokenCount": 2716,
+  "promptTokensDetails": [
+   {
+    "modality": "TEXT",
+    "tokenCount": 618
+   }
+  ],
+  "thoughtsTokenCount": 1566,
+  "serviceTier": "standard"
+ },
+ "cost": 0.006603,
+ "model": "gemini-3.5-flash",
+ "at": "2026-11-21T09:28:33.666Z"
+}

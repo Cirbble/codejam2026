@@ -1,0 +1,64 @@
+{
+ "value": {
+  "vendor_name": "Prairie Natural Gas Utility",
+  "vendor_address": "4251 Granville St\nCalgary AB T9K 7B4",
+  "vendor_gst_hst_number": "862863208RT0001",
+  "vendor_qst_number": null,
+  "doc_type": "invoice",
+  "invoice_number": "PR26-1012",
+  "invoice_date": "2026-10-22",
+  "due_date": "2026-11-12",
+  "terms": "Net 21",
+  "po_number": null,
+  "credit_note_ref": null,
+  "currency": "CAD",
+  "bill_to_address": "Harborline Logistics Inc.\n250 6 Ave SW, Suite 700, Calgary AB T2P 3H7",
+  "ship_to_address": null,
+  "ship_to_province": "AB",
+  "line_items": [
+   {
+    "description": "Energy - October",
+    "quantity": 1,
+    "unit_price": 4494.55,
+    "amount": 4494.55
+   }
+  ],
+  "subtotal": 4494.55,
+  "taxes": [
+   {
+    "type": "GST",
+    "rate_percent": 5,
+    "amount": 224.73
+   }
+  ],
+  "total": 4719.28,
+  "bank": {
+   "institution": "006",
+   "transit": "55541",
+   "account": "704593075"
+  },
+  "payment_instructions": "EFT / virement bancaire - Prairie Natural Gas Utility",
+  "early_payment_discount": null,
+  "language": "en"
+ },
+ "usage": {
+  "promptTokenCount": 1443,
+  "candidatesTokenCount": 474,
+  "totalTokenCount": 2743,
+  "promptTokensDetails": [
+   {
+    "modality": "IMAGE",
+    "tokenCount": 1073
+   },
+   {
+    "modality": "TEXT",
+    "tokenCount": 370
+   }
+  ],
+  "thoughtsTokenCount": 826,
+  "serviceTier": "standard"
+ },
+ "cost": 0.0046215,
+ "model": "gemini-3.5-flash",
+ "at": "2026-11-21T08:56:21.096Z"
+}

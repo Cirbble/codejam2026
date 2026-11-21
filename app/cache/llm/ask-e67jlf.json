@@ -1,0 +1,32 @@
+{
+ "value": {
+  "metric": "sum",
+  "group_by": "vendor",
+  "filters": {
+   "department": null,
+   "category": null,
+   "vendor": null,
+   "gl_account": null,
+   "date_from": "2026-07-01",
+   "date_to": "2026-09-30"
+  },
+  "limit": null,
+  "interpretation": "Top vendors by total spend in Q3 2026."
+ },
+ "usage": {
+  "promptTokenCount": 560,
+  "candidatesTokenCount": 125,
+  "totalTokenCount": 1459,
+  "promptTokensDetails": [
+   {
+    "modality": "TEXT",
+    "tokenCount": 560
+   }
+  ],
+  "thoughtsTokenCount": 774,
+  "serviceTier": "standard"
+ },
+ "cost": 0.002977,
+ "model": "gemini-3.5-flash",
+ "at": "2026-11-21T09:17:36.593Z"
+}

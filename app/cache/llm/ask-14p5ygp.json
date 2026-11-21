@@ -1,0 +1,32 @@
+{
+ "value": {
+  "metric": "sum",
+  "group_by": null,
+  "filters": {
+   "department": "Operations",
+   "category": "Freight & Carriers",
+   "vendor": null,
+   "gl_account": null,
+   "date_from": "2026-07-01",
+   "date_to": "2026-09-30"
+  },
+  "limit": null,
+  "interpretation": "Total Operations spending on freight & carriers in Q3 2026."
+ },
+ "usage": {
+  "promptTokenCount": 562,
+  "candidatesTokenCount": 87,
+  "totalTokenCount": 1251,
+  "promptTokensDetails": [
+   {
+    "modality": "TEXT",
+    "tokenCount": 562
+   }
+  ],
+  "thoughtsTokenCount": 602,
+  "serviceTier": "standard"
+ },
+ "cost": 0.002348,
+ "model": "gemini-3.5-flash",
+ "at": "2026-11-21T09:17:30.662Z"
+}

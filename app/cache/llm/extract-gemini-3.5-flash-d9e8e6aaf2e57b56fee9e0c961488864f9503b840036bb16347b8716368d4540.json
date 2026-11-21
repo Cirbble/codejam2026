@@ -1,0 +1,56 @@
+{
+ "value": {
+  "vendor_name": "Lattice Ledger Systems",
+  "vendor_address": "6893 Granville St, Mississauga ON N3Y 1K7",
+  "vendor_gst_hst_number": "548383828RT0001",
+  "vendor_qst_number": null,
+  "doc_type": "credit_note",
+  "invoice_number": "CM-0091",
+  "invoice_date": "2026-11-06",
+  "due_date": null,
+  "terms": null,
+  "po_number": null,
+  "credit_note_ref": "554",
+  "currency": "CAD",
+  "bill_to_address": "Harborline Logistics Inc.\n250 6 Ave SW, Suite 700\nCalgary AB T2P 3H7",
+  "ship_to_address": null,
+  "ship_to_province": "AB",
+  "line_items": [
+   {
+    "description": "Service credit - October outage (SLA)",
+    "quantity": 1,
+    "unit_price": -660,
+    "amount": -660
+   }
+  ],
+  "subtotal": -660,
+  "taxes": [
+   {
+    "type": "GST",
+    "rate_percent": 5,
+    "amount": -33
+   }
+  ],
+  "total": -693,
+  "bank": null,
+  "payment_instructions": "This credit will be applied to your next invoice.",
+  "early_payment_discount": null,
+  "language": "en"
+ },
+ "usage": {
+  "promptTokenCount": 575,
+  "candidatesTokenCount": 334,
+  "totalTokenCount": 1772,
+  "promptTokensDetails": [
+   {
+    "modality": "TEXT",
+    "tokenCount": 575
+   }
+  ],
+  "thoughtsTokenCount": 863,
+  "serviceTier": "standard"
+ },
+ "cost": 0.0038785,
+ "model": "gemini-3.5-flash",
+ "at": "2026-11-21T09:28:39.182Z"
+}

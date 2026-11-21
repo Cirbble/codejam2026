@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "brim-ap",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--no-warnings", "app/server/index.js"],
+      "port": 3100,
+      "env": { "PORT": "3100" }
+    }
+  ]
+}

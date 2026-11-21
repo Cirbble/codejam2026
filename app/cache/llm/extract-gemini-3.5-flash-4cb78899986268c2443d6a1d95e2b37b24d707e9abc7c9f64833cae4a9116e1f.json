@@ -1,0 +1,60 @@
+{
+ "value": {
+  "vendor_name": "Evergreen Energy Utility",
+  "vendor_address": "4432 Rue Sainte-Catherine\nVancouver BC V4A 4R4",
+  "vendor_gst_hst_number": "879234965RT0001",
+  "vendor_qst_number": null,
+  "doc_type": "invoice",
+  "invoice_number": "000850",
+  "invoice_date": "2026-10-20",
+  "due_date": "2026-11-10",
+  "terms": "Net 21",
+  "po_number": null,
+  "credit_note_ref": null,
+  "currency": "CAD",
+  "bill_to_address": "1055 W Hastings St, Suite 900, Vancouver BC V6E 2E9",
+  "ship_to_address": null,
+  "ship_to_province": "BC",
+  "line_items": [
+   {
+    "description": "Energy - October",
+    "quantity": 1,
+    "unit_price": 3180,
+    "amount": 3180
+   }
+  ],
+  "subtotal": 3180,
+  "taxes": [
+   {
+    "type": "GST",
+    "rate_percent": 5,
+    "amount": 159
+   }
+  ],
+  "total": 3439,
+  "bank": {
+   "institution": "002",
+   "transit": "20338",
+   "account": "331792955"
+  },
+  "payment_instructions": "EFT / virement bancaire - Evergreen Energy Utility",
+  "early_payment_discount": null,
+  "language": "en"
+ },
+ "usage": {
+  "promptTokenCount": 642,
+  "candidatesTokenCount": 465,
+  "totalTokenCount": 1788,
+  "promptTokensDetails": [
+   {
+    "modality": "TEXT",
+    "tokenCount": 642
+   }
+  ],
+  "thoughtsTokenCount": 681,
+  "serviceTier": "standard"
+ },
+ "cost": 0.003759,
+ "model": "gemini-3.5-flash",
+ "at": "2026-11-21T08:56:14.001Z"
+}

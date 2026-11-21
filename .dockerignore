@@ -1,0 +1,6 @@
+**/node_modules
+app/data
+app/client/dist
+.git
+.claude
+challenge/brief.docx
