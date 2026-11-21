@@ -1,6 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { cap, MAX_TRIES } from '../api';
 import { EmptySlot, GameCard } from '../components/GameCard';
 import { Bar, H, Mono, Screen, T, tap } from '../components/ui';
@@ -61,8 +61,7 @@ export default function DailyScreen() {
                   {card ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <T style={{ fontFamily: F.bodyBold, color: TIERS[card.tier].text }}>{TIERS[card.tier].name}</T>
-                      <Mono style={{ color: C.ink }}>{card.title}</Mono>
-                      <Mono style={{ color: C.ink }}>{card.points} pts</Mono>
+                      <Mono numberOfLines={1} style={{ color: C.ink, flexShrink: 1 }}>{card.title}</Mono>
                     </View>
                   ) : out ? (
                     <Mono style={{ color: C.faint }}>No tries left today</Mono>
@@ -70,7 +69,7 @@ export default function DailyScreen() {
                     <T style={{ color: C.blaze, fontFamily: F.bodyBold, fontSize: 15 }}>{left} {left === 1 ? 'try' : 'tries'} left</T>
                   ) : null}
                 </View>
-                {card && <Feather name="chevron-right" size={22} color={C.faint} />}
+                {card && <Text style={{ fontFamily: F.display, fontSize: 24, color: C.ink, minWidth: 40, textAlign: 'right', fontVariant: ['tabular-nums'] }}>{card.points}</Text>}
               </Pressable>
             );
           })}

@@ -11,6 +11,8 @@ if [ -d dist/assets/node_modules ]; then
   mv dist/assets/node_modules dist/assets/nm
   grep -rl "assets/node_modules/" dist --include=*.js --include=*.html | while read -r f; do sed -i 's#assets/node_modules/#assets/nm/#g' "$f"; done
 fi
+# paint the page colour before the bundle loads (no white flash on slow networks)
+sed -i 's#</head>#<style>html,body{background:\#E9EDE5;margin:0}</style><meta name="theme-color" content="\#E9EDE5"></head>#' dist/index.html
 rm -rf ../server/public/play
 cp -r dist ../server/public/play
 echo "web build -> server/public/play"

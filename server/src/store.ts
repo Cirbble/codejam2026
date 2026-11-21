@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Card, Reply } from './types.js';
+import { dict, toDict } from './dict.js';
 
 export const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data');
 export const PHOTO_DIR = join(DATA_DIR, 'p');
@@ -33,7 +34,20 @@ type FindsDoc = {
   photoMark: Record<string, string>;
 };
 const FINDS_FILE = join(DATA_DIR, 'finds.json');
-const empty = (): FindsDoc => ({ counts: {}, counted: {}, cards: {}, devices: {}, daily: {}, photoMark: {} });
+const empty = (): FindsDoc => ({ counts: dict(), counted: dict(), cards: dict(), devices: dict(), daily: dict(), photoMark: dict() });
+
+/** Rebuild a loaded document with null-prototype dictionaries at every level keyed by user strings. */
+function normalize(raw: any): FindsDoc {
+  const entry = (e: any): DailyEntry => ({ cards: toDict(e?.cards), tries: toDict(e?.tries), ...(e?.subs ? { subs: toDict(e.subs) } : {}) });
+  return {
+    counts: toDict(raw?.counts, (m) => toDict<number>(m)),
+    counted: toDict(raw?.counted),
+    cards: toDict(raw?.cards),
+    devices: toDict(raw?.devices, (l) => (Array.isArray(l) ? l : [])),
+    daily: toDict(raw?.daily, (byDev) => toDict(byDev, entry)),
+    photoMark: toDict(raw?.photoMark),
+  };
+}
 
 function readJson(file: string): any {
   try {
@@ -46,10 +60,10 @@ function readJson(file: string): any {
 
 function loadDoc(): FindsDoc {
   const doc = readJson(FINDS_FILE);
-  if (doc) return { ...empty(), ...doc };
+  if (doc) return normalize(doc);
   // one-time migration from the earlier one-file-per-collection layout
   const legacy = (n: string) => readJson(join(DATA_DIR, `${n}.json`)) ?? {};
-  const d: FindsDoc = { ...empty(), counts: legacy('counts'), counted: legacy('counted'), cards: legacy('cards'), devices: legacy('devices'), daily: legacy('daily') };
+  const d: FindsDoc = normalize({ counts: legacy('counts'), counted: legacy('counted'), cards: legacy('cards'), devices: legacy('devices'), daily: legacy('daily') });
   if (Object.keys(d.cards).length || Object.keys(d.counts).length) console.log('[store] migrated legacy files into finds.json');
   return d;
 }
@@ -97,14 +111,14 @@ export const byDevice = new Section('devices');
 export const daily = new Section('daily');
 
 export function promptTotals(promptId: string) {
-  const m = doc.counts[promptId] ?? {};
+  const m = doc.counts[promptId] ?? dict<number>();
   let total = 0;
   for (const n of Object.values(m)) total += n;
   return { map: m, total };
 }
 
 export function topLabels(promptId: string, n: number): { label: string; count: number }[] {
-  return Object.entries(doc.counts[promptId] ?? {})
+  return Object.entries(doc.counts[promptId] ?? dict<number>())
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, n)
     .map(([label, count]) => ({ label, count }));
@@ -115,9 +129,9 @@ export function topLabels(promptId: string, n: number): { label: string; count: 
  * so re-submitting cannot farm rarity. Returns the counts at that moment, including this find.
  * In memory only: the caller commits.
  */
-export function countFind(promptId: string, label: string, device: string, imageHash: string) {
-  const m = (doc.counts[promptId] ??= {});
-  const kd = `d|${promptId}|${device}|${label}`;
+export function countFind(promptId: string, label: string, crowdKey: string, imageHash: string) {
+  const m = (doc.counts[promptId] ??= dict<number>());
+  const kd = `d|${promptId}|${crowdKey}|${label}`; // crowdKey: the device, or device + team for solo runs
   const ki = `i|${promptId}|${imageHash}`;
   const fresh = !doc.counted[kd] && !doc.counted[ki];
   const firstEver = fresh && !m[label]; // decided before incrementing
@@ -170,12 +184,12 @@ export function saveCard(card: Card, device: string, jpeg: Buffer, imageHash: st
 }
 
 export function dailyEntry(day: string, device: string): DailyEntry {
-  return doc.daily[day]?.[device] ?? { cards: {}, tries: {} };
+  return doc.daily[day]?.[device] ?? { cards: dict(), tries: dict() };
 }
 
 export function dailyEntryMut(day: string, device: string): DailyEntry {
-  const d = (doc.daily[day] ??= {});
-  return (d[device] ??= { cards: {}, tries: {} });
+  const d = (doc.daily[day] ??= dict());
+  return (d[device] ??= { cards: dict(), tries: dict() });
 }
 
 /** Startup integrity check: drop cards whose photo file is missing (and every reference to them). */

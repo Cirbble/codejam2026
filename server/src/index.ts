@@ -9,10 +9,12 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Room } from './room.js';
 import { IP_HOURLY_JUDGE, ipAttempts, judgePhoto, judgeStats, type Judgement } from './judge.js';
 import { canonicalLabel, normalizeLabel, scoreFind, titleFor } from './rarity.js';
-import { dailyPrompts, nextTorontoMidnight, promptById, squadPrompts, torontoDay } from './prompts.js';
+import { dailyPrompts, nextTorontoMidnight, promptById, soloPrompts, squadPrompts, torontoDay } from './prompts.js';
+import { thumbnail, THUMB_W } from './thumbs.js';
 import { DATA_DIR, PHOTO_DIR, byDevice, cards, commitFinds, countFind, dailyEntry, dailyEntryMut, daily, dropCardsWithoutPhotos, flushAll, usedPhoto, promptTotals, saveCard, topLabels, writeAtomic } from './store.js';
 import { MAX_TRIES } from './room.js';
 import { Lru } from './lru.js';
+import { dict } from './dict.js';
 import { boardView, displayTeam, recordRun, resetBoard, teamKey } from './board.js';
 import type { Card, ClientMsg, ErrorCode, FindBody, Prompt, Reply, ServerMsg, WsErrorCode } from './types.js';
 
@@ -22,6 +24,22 @@ const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const JUDGE_GAP_MS = 4000;
 const MAX_IN_FLIGHT = 10;
 const ROOMS_FILE = join(DATA_DIR, 'rooms.json');
+
+/** Event-sized limits (venue Wi-Fi puts everyone behind one IP). All overridable by env. */
+const envInt = (name: string, dflt: number) => {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? v : dflt;
+};
+const LIMITS = {
+  IP_JUDGE_PER_MIN: envInt('IP_JUDGE_PER_MIN', 300),
+  IP_FIND_REQ_PER_MIN: envInt('IP_FIND_REQ_PER_MIN', 600),
+  CREATE_PER_IP_MIN: envInt('CREATE_PER_IP_MIN', 60),
+  JOIN_PER_IP_MIN: envInt('JOIN_PER_IP_MIN', 300),
+  WS_PENDING_PER_IP: envInt('WS_PENDING_PER_IP', 300),
+  SOLO_PER_IP: envInt('SOLO_PER_IP', 80), // per 10 minutes
+  TEAM_RUNS_PER_HOUR: envInt('TEAM_RUNS_PER_HOUR', 20),
+  SOLO_DEVICE_GAP_MS: envInt('SOLO_DEVICE_GAP_MS', 30_000),
+};
 
 const rooms = new Map<string, Room>();
 let shuttingDown = false;
@@ -61,6 +79,9 @@ app.use((e: any, _req: express.Request, res: express.Response, next: express.Nex
 });
 
 // landing page at /, the web build of the app at /play (single-page app)
+// quick-play link for the table visits
+app.get('/q', (_req, res) => res.redirect(302, '/play/?solo=1'));
+
 const PUBLIC = path.resolve(process.env.PUBLIC_DIR || 'public');
 app.use(express.static(PUBLIC, { extensions: ['html'], maxAge: '5m' }));
 app.get(/^\/play(\/[^.]*)?$/, (_req, res) => res.sendFile(path.join(PUBLIC, 'play', 'index.html'))); // asset paths (with a dot) 404 instead of returning the page
@@ -115,13 +136,17 @@ app.get('/api/prompt/:id/top', (req, res) => {
   res.json({ total, top: topLabels(req.params.id, 10) });
 });
 
-app.get('/p/:file', (req, res) => {
+app.get('/p/:file', async (req, res) => {
   const m = /^([a-f0-9]{16,64})\.jpg$/.exec(req.params.file);
   const f = m && join(PHOTO_DIR, `${m[1]}.jpg`);
   if (!f || !existsSync(f)) return res.sendStatus(404);
   res.setHeader('content-type', 'image/jpeg');
   res.setHeader('cache-control', 'public, max-age=31536000, immutable');
-  res.end(readFileSync(f));
+  if (Number(req.query.w) === THUMB_W) {
+    const t = await thumbnail(m![1]); // made on save; generated now for older cards
+    if (t) return res.end(t);
+  }
+  res.end(readFileSync(f)); // full photo (also the fallback when a thumbnail can't be made)
 });
 
 // ---------- finds ----------
@@ -171,7 +196,7 @@ function gate(rateKey: string, ip: string): Reply | null {
   if (shuttingDown) return fail(503, 'ai_down', 'Server is restarting. Try again in a few seconds.');
   const now = Date.now();
   const hits = (ipHits.get(ip) ?? []).filter((t) => now - t < 60_000);
-  if (hits.length >= 60) return rateLimited('Too many photos. Take a breath.', 60_000 - (now - hits[0]));
+  if (hits.length >= LIMITS.IP_JUDGE_PER_MIN) return rateLimited('Too many photos. Take a breath.', 60_000 - (now - hits[0]));
   const since = now - (lastJudge.get(rateKey) ?? 0);
   if (since < JUDGE_GAP_MS) return rateLimited('One photo every few seconds.', JUDGE_GAP_MS - since);
   if (inFlight >= MAX_IN_FLIGHT) return rateLimited('Busy. Try again in a few seconds.', 2000);
@@ -214,10 +239,10 @@ const usedPhotoReply = (triesLeft: number): Reply => ({ status: 200, body: { acc
 const hashOf = (jpeg: Buffer) => createHash('sha1').update(jpeg).digest('hex');
 
 /** Count, score and durably store an accepted find. Throws (with all in-memory state undone) if it can't be saved. */
-function mintCard(prompt: Prompt, j: Judgement, jpeg: Buffer, device: string, extra: Partial<Card>): { card: Card; undo: () => void } {
+function mintCard(prompt: Prompt, j: Judgement, jpeg: Buffer, device: string, extra: Partial<Card>, crowdKey = device): { card: Card; undo: () => void } {
   const label = canonicalLabel(normalizeLabel(j.label), promptTotals(prompt.id).map);
   const imageHash = hashOf(jpeg);
-  const count = countFind(prompt.id, label, device, imageHash);
+  const count = countFind(prompt.id, label, crowdKey, imageHash);
   const { sameCount, totalCount, firstEver } = count;
   const s = scoreFind(j.aiRarity, sameCount, totalCount, firstEver);
   const id = randomBytes(12).toString('hex');
@@ -260,7 +285,7 @@ async function handleFind(b: any, device: string, submissionId: string, ip: stri
   // cheap per-IP request cap before any decoding or lookups
   const now = Date.now();
   const hits = (reqHits.get(ip) ?? []).filter((t) => now - t < 60_000);
-  if (hits.length >= 120) return rateLimited('Too many requests. Take a breath.', 60_000 - (now - hits[0]));
+  if (hits.length >= LIMITS.IP_FIND_REQ_PER_MIN) return rateLimited('Too many requests. Take a breath.', 60_000 - (now - hits[0]));
   hits.push(now);
   reqHits.set(ip, hits);
   const jpeg = decodeImage(b.image);
@@ -291,7 +316,7 @@ async function handleFind(b: any, device: string, submissionId: string, ip: stri
     if (entry.cards[prompt.id]) return fail(409, 'locked', 'You already locked this prompt today.');
     entry.tries[prompt.id] = (entry.tries[prompt.id] ?? 0) + 1;
     const keep = (reply: Reply) => {
-      (entry.subs ??= {})[submissionId] = reply;
+      (entry.subs ??= dict())[submissionId] = reply;
       daily.flush();
       return reply;
     };
@@ -302,8 +327,9 @@ async function handleFind(b: any, device: string, submissionId: string, ip: stri
       made = mintCard(prompt, r.j, jpeg, device, { mode: 'daily', day });
       const reply: Reply = { status: 200, body: { accepted: true, card: made.card } };
       entry.cards[prompt.id] = made.card.id;
-      (entry.subs ??= {})[submissionId] = reply;
+      (entry.subs ??= dict())[submissionId] = reply;
       commitFinds(); // ONE atomic write: counts, marks, card, device list, daily lock and reply
+      void thumbnail(made.card.id); // 240 px thumbnail in the background
       return reply;
     } catch (err) {
       console.error('[find] save failed', (err as Error).message);
@@ -350,7 +376,9 @@ async function squadFind(b: any, device: string, submissionId: string, ip: strin
   let made: ReturnType<typeof mintCard> | undefined;
   try {
     reply = room.settle(player.id, submissionId, pre.round, outcomeOf(r.j), () => {
-      made = mintCard(pre.prompt, r.j, jpeg, player.device || device, { mode: 'squad', playerName: player.name, playerId: player.id });
+      const dev = player.device || device;
+      // solo runs count crowd stats per (device, team): one phone passed between tables still counts each team
+      made = mintCard(pre.prompt, r.j, jpeg, dev, { mode: 'squad', playerName: player.name, playerId: player.id }, room.solo && room.team ? `${dev}|team:${teamKey(room.team)}` : dev);
       try {
         commitFinds(); // atomic write of the find metadata (photo already on disk)
       } catch (e) {
@@ -376,6 +404,7 @@ async function squadFind(b: any, device: string, submissionId: string, ip: strin
       return SAVE_FAILED();
     }
   }
+  if (made && 'accepted' in reply.body && reply.body.accepted) void thumbnail(made.card.id);
   broadcast(room, true);
   return reply;
   });
@@ -449,7 +478,7 @@ class WsError extends Error {
 wss.on('connection', (ws, req) => {
   const conn: Conn = { ws, ip: clientIp(req.headers, req.socket.remoteAddress) };
   const loose = [...conns].filter((c) => c.ip === conn.ip && !c.code).length;
-  if (conns.size >= 3000 || loose >= 60 || shuttingDown) return ws.close(1013, 'busy');
+  if (conns.size >= 3000 || loose >= LIMITS.WS_PENDING_PER_IP || shuttingDown) return ws.close(1013, 'busy');
   conns.add(conn);
   setTimeout(() => {
     if (!conn.code && ws.readyState === WebSocket.OPEN) ws.close(1008, 'join a room');
@@ -508,10 +537,11 @@ function attach(conn: Conn, room: Room, playerId: string, secret: string) {
 }
 
 // ---------------- People's Choice: solo runs + team leaderboard ----------------
-const SOLO_PER_IP = 10; // per 10 minutes
-const TEAM_RUNS_PER_HOUR = 20;
+const soloDeviceAt = new Map<string, number>();
 const soloIpHits = new Map<string, number[]>();
 const teamHits = new Map<string, number[]>();
+/** Solo runs share one fixed prompt set per Toronto day; squads draw at random. */
+const pickFor = (solo: boolean) => (solo ? () => soloPrompts(torontoDay()) : (q: boolean) => squadPrompts(q));
 function windowLimited(map: Map<string, number[]>, key: string, max: number, windowMs: number) {
   const now = Date.now();
   const hits = (map.get(key) ?? []).filter((t) => now - t < windowMs);
@@ -523,7 +553,8 @@ function windowLimited(map: Map<string, number[]>, key: string, max: number, win
 function recordSolo(room: Room) {
   const p = [...room.players.values()][0];
   if (!p || !room.team) return;
-  room.board = recordRun({ team: room.team, playerName: p.name, score: p.score, bestCardId: room.results().best[p.id] ?? null, at: Date.now() });
+  // throws on a board write failure: the room keeps boardRecorded=false and retries (idempotent by runId)
+  room.board = recordRun({ runId: room.runId ?? room.code, team: room.team, playerName: p.name, score: p.score, bestCardId: room.results().best[p.id] ?? null, at: room.endedAt ?? Date.now() });
 }
 
 function leavePlayer(room: Room, playerId: string) {
@@ -545,12 +576,16 @@ function handle(conn: Conn, m: ClientMsg) {
       if (solo) {
         team = displayTeam(m.team);
         if (!team) throw new WsError('other', 'Enter your team name.');
-        if (windowLimited(soloIpHits, conn.ip, SOLO_PER_IP, 10 * 60_000)) throw new WsError('rate', 'Too many solo runs from this network. Try again in a few minutes.');
-        if (windowLimited(teamHits, teamKey(team), TEAM_RUNS_PER_HOUR, 3600_000)) throw new WsError('rate', 'This team has played a lot this hour. Try again later.');
+        if (!validDevice(m.device)) throw new WsError('other', 'Missing device.');
+        const since = Date.now() - (soloDeviceAt.get(m.device) ?? 0);
+        if (since < LIMITS.SOLO_DEVICE_GAP_MS) throw new WsError('rate', `One solo run every ${Math.round(LIMITS.SOLO_DEVICE_GAP_MS / 1000)} s per phone. Try again in ${Math.ceil((LIMITS.SOLO_DEVICE_GAP_MS - since) / 1000)} s.`);
+        if (windowLimited(soloIpHits, conn.ip, LIMITS.SOLO_PER_IP, 10 * 60_000)) throw new WsError('rate', 'Too many solo runs from this network. Try again in a few minutes.');
+        if (windowLimited(teamHits, teamKey(team), LIMITS.TEAM_RUNS_PER_HOUR, 3600_000)) throw new WsError('rate', 'This team has played a lot this hour. Try again later.');
+        soloDeviceAt.set(m.device, Date.now());
       }
-      if (limited(createHits, conn.ip, 10) || rooms.size >= 1000) throw new WsError('rate', 'Too many new squads. Try again in a minute.');
+      if (limited(createHits, conn.ip, LIMITS.CREATE_PER_IP_MIN) || rooms.size >= 1000) throw new WsError('rate', 'Too many new squads. Try again in a minute.');
       const code = newCode();
-      const room = new Room(code, solo || !!m.quick, Date.now, (q) => squadPrompts(q), { solo, team, onEnd: recordSolo });
+      const room = new Room(code, solo || !!m.quick, Date.now, pickFor(solo), { solo, team, onEnd: recordSolo });
       rooms.set(code, room);
       const p = room.addPlayer(m.name, validDevice(m.device) ? m.device : '');
       if (solo) room.start(p.id); // a solo run starts on its own: 3 s countdown, then round 1
@@ -561,7 +596,7 @@ function handle(conn: Conn, m: ClientMsg) {
     }
     case 'join': {
       if (replayOp(conn, m)) return;
-      if (limited(joinHits, conn.ip, 60)) throw new WsError('rate', 'Too many tries. Wait a minute.');
+      if (limited(joinHits, conn.ip, LIMITS.JOIN_PER_IP_MIN)) throw new WsError('rate', 'Too many tries. Wait a minute.');
       const room = getRoom(m.code);
       if (!room) throw new WsError('no_room', 'No squad with that code.');
       const ok = room.canJoin();
@@ -573,7 +608,7 @@ function handle(conn: Conn, m: ClientMsg) {
       return;
     }
     case 'resume': {
-      if (limited(joinHits, conn.ip, 60)) throw new WsError('rate', 'Too many tries. Wait a minute.');
+      if (limited(joinHits, conn.ip, LIMITS.JOIN_PER_IP_MIN)) throw new WsError('rate', 'Too many tries. Wait a minute.');
       const room = getRoom(m.code);
       if (!room) throw new WsError('no_room', 'That squad is gone.');
       const p = room.auth(m.playerId, m.secret);
@@ -584,7 +619,7 @@ function handle(conn: Conn, m: ClientMsg) {
     case 'leave': {
       if (!m.code && !m.playerId) break; // a plain leave on an attached socket, below
       // leave with credentials on any socket: lets the app retry a leave that happened offline
-      if (limited(joinHits, conn.ip, 60)) throw new WsError('rate', 'Too many tries. Wait a minute.');
+      if (limited(joinHits, conn.ip, LIMITS.JOIN_PER_IP_MIN)) throw new WsError('rate', 'Too many tries. Wait a minute.');
       const room = getRoom(m.code);
       const p = room?.players.get(String(m.playerId));
       if (room && p) {
@@ -678,7 +713,7 @@ function loadRooms() {
     if (!existsSync(ROOMS_FILE)) return;
     const saved = JSON.parse(readFileSync(ROOMS_FILE, 'utf8'));
     for (const s of saved.rooms ?? []) {
-      const r = Room.restore(s, Date.now, (q) => squadPrompts(q), recordSolo);
+      const r = Room.restore(s, Date.now, pickFor(!!s.solo), recordSolo);
       if (!r.expired()) rooms.set(r.code, r);
     }
     console.log(`[persist] restored ${rooms.size} rooms`);

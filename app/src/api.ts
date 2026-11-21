@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Image } from 'expo-image';
 import Constants from 'expo-constants';
 import type { Tier } from './theme';
 
@@ -79,7 +80,7 @@ export const SERVER: string = (
   'http://localhost:8790'
 ).replace(/\/$/, '');
 
-export const photoUrl = (c: Card) => (c.photo.startsWith('http') ? c.photo : SERVER + c.photo);
+export const photoUrl = (c: Card, small = false) => (c.photo.startsWith('http') ? c.photo : SERVER + c.photo) + (small ? '?w=240' : '');
 
 let deviceId: string | null = null;
 export async function getDevice(): Promise<string> {
@@ -107,12 +108,36 @@ async function getJSON<T>(path: string, ms = 10_000): Promise<T> {
   }
 }
 
+let dailyMem: Daily | null = null;
+let collectionMem: Card[] | null = null;
+
+/** Last known daily hunt, if it is still today's. */
+export const peekDaily = () => (dailyMem && dailyMem.resetsAt > Date.now() ? dailyMem : null);
+export const peekCollection = () => collectionMem;
+
+export async function loadCachedDaily(): Promise<Daily | null> {
+  if (peekDaily()) return dailyMem;
+  try {
+    const raw = await AsyncStorage.getItem('rarefind.dailyCache');
+    const d = raw ? (JSON.parse(raw) as Daily) : null;
+    if (d && d.resetsAt > Date.now()) return (dailyMem = d);
+  } catch {}
+  return null;
+}
+
 export async function fetchDaily(): Promise<Daily> {
-  return getJSON<Daily>(`/api/daily?device=${await getDevice()}`);
+  const d = await getJSON<Daily>(`/api/daily?device=${await getDevice()}`);
+  dailyMem = d;
+  prefetchCards(Object.values(d.cards), true);
+  AsyncStorage.setItem('rarefind.dailyCache', JSON.stringify(d)).catch(() => {});
+  return d;
 }
 
 export async function fetchCollection(): Promise<Card[]> {
-  return (await getJSON<{ cards: Card[] }>(`/api/collection?device=${await getDevice()}`)).cards;
+  const c = (await getJSON<{ cards: Card[] }>(`/api/collection?device=${await getDevice()}`)).cards;
+  collectionMem = c;
+  prefetchCards(c.slice(0, 24), true);
+  return c;
 }
 
 export async function fetchTop(promptId: string) {
@@ -159,4 +184,10 @@ export function rarityLine(c: { title: string; sameCount: number; totalCount: nu
 
 export async function fetchBoard(): Promise<BoardRow[]> {
   return (await getJSON<{ teams: BoardRow[] }>('/api/board')).teams;
+}
+
+/** Warm the image cache so cards never appear before their photo. */
+export function prefetchCards(cards: Card[], small = false) {
+  const urls = cards.map((c) => photoUrl(c, small));
+  if (urls.length) Image.prefetch(urls, 'memory-disk').catch(() => {});
 }

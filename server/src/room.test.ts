@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { COUNTDOWN_MS, HUNT_MS, MAX_TRIES, QUICK_HUNT_MS, REVEAL_MAX_MS as REVEAL_MS, Room, LOBBY_IDLE_MS, revealMsFor } from './room.js';
 import { scoreFind, tierFor, normalizeLabel, canonicalLabel } from './rarity.js';
-import { INDOOR, OUTDOOR, dailyPrompts, squadPrompts, seeded, torontoDay, nextTorontoMidnight, QUICK_OPENER } from './prompts.js';
+import { INDOOR, OUTDOOR, dailyPrompts, soloPrompts, squadPrompts, seeded, torontoDay, nextTorontoMidnight, QUICK_OPENER } from './prompts.js';
 import type { Card, PromptDef } from './types.js';
 
 // ---------- fake clock ----------
@@ -224,32 +224,37 @@ test('winners: ties list everyone on the top score; nobody when all are 0', () =
 });
 
 // ---------- rarity ----------
-test('rarity math: AI decides at first, crowd takes over', () => {
+test('rarity math: AI decides at first, the crowd weighs in up to half', () => {
   // first find ever: w = 0 -> ai
   assert.deepEqual(scoreFind(42, 1, 1, true), { rarity: 42, tier: 'uncommon', points: 30 });
   // first-ever find of a label with ai >= 80 -> One of One
   assert.equal(scoreFind(80, 1, 1, true).tier, 'one');
   assert.equal(scoreFind(80, 1, 1, true).points, 100);
   assert.equal(scoreFind(79, 1, 1, true).tier, 'rare');
-  // total 26 -> w = 1, pure crowd: 100*(1-13/26) = 50
-  assert.equal(scoreFind(0, 13, 26, false).rarity, 50);
   // total 11 -> w = 0.4; crowd = 100*(1-5/11) = 54.5; 0.4*54.5 + 0.6*90 = 75.8 -> 76
   assert.equal(scoreFind(90, 5, 11, false).rarity, 76);
-  // 3 of 412: crowd 99.27 -> 99 -> one
-  assert.deepEqual(scoreFind(10, 3, 412, false), { rarity: 99, tier: 'one', points: 100 });
+  // crowd weight is capped at 0.5: total 26, crowd 50, ai 0 -> 25 (not 50)
+  assert.equal(scoreFind(0, 13, 26, false).rarity, 25);
+  // 3 of 412 but the AI calls it ordinary: 0.5*99.3 + 0.5*10 = 55 -> uncommon, not One of One
+  assert.deepEqual(scoreFind(10, 3, 412, false), { rarity: 55, tier: 'uncommon', points: 30 });
+  // a rare find the AI also rates highly: 0.5*99.3 + 0.5*96 = 97.6 -> 98 -> one
+  assert.deepEqual(scoreFind(96, 3, 412, false), { rarity: 98, tier: 'one', points: 100 });
   // fire hydrant everybody finds
   assert.equal(scoreFind(20, 300, 412, false).tier, 'common');
 });
 
-test('tiers and points at every boundary', () => {
+test('tiers and points at every boundary; One of One needs aiRarity >= 60', () => {
   const cases: [number, string, number][] = [
     [0, 'common', 10], [39, 'common', 10], [40, 'uncommon', 30], [64, 'uncommon', 30], [65, 'rare', 60],
     [84, 'rare', 60], [85, 'epic', 85], [96, 'epic', 85], [97, 'one', 100], [100, 'one', 100],
   ];
   for (const [r, tier] of cases) assert.equal(tierFor(r), tier, `rarity ${r}`);
+  assert.equal(tierFor(98, false, 59), 'epic', 'high rarity, low AI rarity: not One of One');
+  assert.equal(tierFor(98, false, 60), 'one');
+  assert.equal(tierFor(50, true, 59), 'uncommon', 'first-ever needs the AI to agree too');
   // a big crowd with sameCount 1 and high ai is still One of One (first ever of that label)
   assert.equal(scoreFind(85, 1, 500, true).tier, 'one');
-  assert.equal(scoreFind(50, 1, 500, false).rarity, 100);
+  assert.equal(scoreFind(50, 1, 500, false).rarity, 75);
   // a deduplicated find (re-submitted photo / same device) never gets the first-ever bonus, even with sameCount 1
   assert.equal(scoreFind(85, 1, 1, false).tier, 'epic');
   assert.equal(scoreFind(85, 1, 1, false).points, 85);
@@ -592,4 +597,43 @@ test('solo run: auto-start flow, 3 quick rounds, opener + no repeats, 4 s reveal
   clock.t += 61_000;
   assert.equal(room.expired(), true);
   assert.equal(ended.length, 1);
+});
+
+test('solo: same 3 prompts per day for every team; unique runId; a failed board save retries until it sticks', () => {
+  const a = soloPrompts('2026-11-22');
+  const b = soloPrompts('2026-11-22');
+  assert.deepEqual(a.map((p) => p.id), b.map((p) => p.id));
+  assert.equal(a.length, 3);
+  assert.equal(a[0].id, QUICK_OPENER);
+  assert.equal(new Set(a.map((p) => p.id)).size, 3);
+  assert.ok(a.every((p) => INDOOR.includes(p)));
+  const clock = { t: 1_800_000_000_000 };
+  const now = () => clock.t;
+  let fails = 2;
+  let recorded = 0;
+  const room = new Room('RTRY', true, now, () => soloPrompts('2026-11-22'), {
+    solo: true,
+    team: 'Echo',
+    onEnd: (r) => {
+      if (fails-- > 0) throw new Error('disk full');
+      recorded++;
+      r.board = { rank: 1, best: 0 };
+    },
+  });
+  const p = room.addPlayer('E', 'e'.repeat(32));
+  room.start(p.id);
+  assert.match(room.runId!, /^RTRY-[a-f0-9]{16}$/);
+  assert.deepEqual(room.prompts.map((x) => x.id), a.map((x) => x.id));
+  while (room.phase !== 'ended') room.skip(p.id);
+  assert.equal(room.boardRecorded, false, 'first save failed');
+  for (let i = 0; i < 12 * 4; i++) {
+    clock.t += 250;
+    room.tick();
+  }
+  assert.equal(room.boardRecorded, true, 'retried after the failures');
+  assert.equal(recorded, 1);
+  assert.equal(room.view().boardRank, 1);
+  const squad = new Room('SQD1', false, now, (q) => squadPrompts(q, seeded('x')));
+  squad.start(squad.addPlayer('S', 's'.repeat(32)).id);
+  assert.equal(squad.runId, null, 'only solo runs get a runId');
 });

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AppState, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { cap, Daily, fetchDaily, MAX_TRIES } from '../api';
+import { cap, Daily, fetchDaily, loadCachedDaily, MAX_TRIES, peekDaily } from '../api';
 import { CardBack, GameCard, Wordmark } from '../components/GameCard';
 import { Button, H, Label, Mono, Screen, T, tap } from '../components/ui';
 import { useNav } from '../nav';
@@ -9,7 +9,7 @@ import { useSquad } from '../squad';
 import { C, F } from '../theme';
 
 export function useDaily() {
-  const [daily, setDaily] = useState<Daily | null>(null);
+  const [daily, setDaily] = useState<Daily | null>(peekDaily);
   const [failed, setFailed] = useState(false);
   const load = useCallback(() => {
     fetchDaily()
@@ -20,6 +20,7 @@ export function useDaily() {
       .catch(() => setFailed(true));
   }, []);
   useEffect(() => {
+    if (!peekDaily()) loadCachedDaily().then((d) => d && setDaily((cur) => cur ?? d));
     load();
     const sub = AppState.addEventListener('change', (s) => s === 'active' && load());
     return () => sub.remove();
@@ -45,6 +46,13 @@ export default function Home() {
   const { daily, failed, reload } = useDaily();
   const opened = React.useRef(false);
   useEffect(() => {
+    // the event QR code opens Quick play straight away (?solo=1)
+    const q = (globalThis as any).location?.search as string | undefined;
+    if (!opened.current && q && /[?&]solo=1/.test(q)) {
+      opened.current = true;
+      nav.push({ name: 'solo' });
+      return;
+    }
     if (squad.pendingJoin && !squad.session && !opened.current) {
       opened.current = true;
       nav.push({ name: 'squad' });
@@ -64,7 +72,7 @@ export default function Home() {
         <Wordmark size={36} />
         <Button title="Cards" icon="layers" kind="line" onPress={() => nav.push({ name: 'collection' })} style={{ height: 44, paddingHorizontal: 14, borderRadius: 13 }} />
       </View>
-      <Mono style={{ marginTop: 6 }}>{daily ? fmtDay(daily.day) : ' '}</Mono>
+      <Mono style={{ marginTop: 6 }}>{daily ? fmtDay(daily.day) : new Date().toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric' })}</Mono>
 
       <View style={{ flex: 1, justifyContent: 'center' }}>
       <View style={[styles.stage, { flex: 1, justifyContent: 'center' }]}>
@@ -123,21 +131,29 @@ export default function Home() {
               <Feather name="camera" size={26} color={C.white} />
             </View>
           </Pressable>
-        ) : daily ? (
+        ) : !daily ? (
+          <View style={styles.next} accessibilityLabel="Loading today's prompts">
+            <View style={{ flex: 1, gap: 10 }}>
+              <Label style={{ color: '#A9B1A2' }}>Next up</Label>
+              <View style={{ height: 22, width: '70%', borderRadius: 6, backgroundColor: '#2A3025' }} />
+            </View>
+            <View style={[styles.shoot, { backgroundColor: '#2A3025', borderColor: '#2A3025' }]} />
+          </View>
+        ) : (
           <View style={[styles.next, { backgroundColor: C.card, borderWidth: 2, borderColor: C.ink }]}>
             <View style={{ flex: 1, gap: 6 }}>
               <Label>{done ? 'All five found' : "That's today's hunt"}</Label>
               <H size={24}>New prompts at midnight</H>
             </View>
           </View>
-        ) : null}
+        )}
       </View>
       </View>
       <View style={{ gap: 12, marginTop: 12 }}>
-        <Button title="Quick play" icon="zap" kind="ink" onPress={() => nav.push({ name: 'solo' })} />
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <Button title="Today" icon="list" kind="line" onPress={() => nav.push({ name: 'daily' })} disabled={!daily} style={{ flex: 1, paddingHorizontal: 12 }} />
-          <Button title="Squad" icon="users" kind="line" onPress={() => nav.push({ name: 'squad' })} style={{ flex: 1, paddingHorizontal: 12 }} />
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <Button title="Quick play" icon="zap" kind="line" onPress={() => nav.push({ name: 'solo' })} style={{ flex: 1.25, paddingHorizontal: 8 }} />
+          <Button title="Today" kind="line" onPress={() => nav.push({ name: 'daily' })} disabled={!daily} style={{ flex: 1, paddingHorizontal: 8 }} />
+          <Button title="Squad" kind="line" onPress={() => nav.push({ name: 'squad' })} style={{ flex: 1, paddingHorizontal: 8 }} />
         </View>
       </View>
     </Screen>
@@ -147,6 +163,6 @@ export default function Home() {
 const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   stage: { alignItems: 'center', paddingBottom: 22 },
-  next: { flexDirection: 'row', alignItems: 'center', gap: 16, padding: 20, borderRadius: 22, backgroundColor: C.ink, transform: [{ rotate: '-1deg' }], boxShadow: `0px 5px 0px ${C.blaze}` },
+  next: { minHeight: 100, flexDirection: 'row', alignItems: 'center', gap: 16, padding: 20, borderRadius: 22, backgroundColor: C.ink, transform: [{ rotate: '-1deg' }], boxShadow: `0px 5px 0px ${C.blaze}` },
   shoot: { width: 60, height: 60, borderRadius: 30, backgroundColor: C.blaze, borderWidth: 2, borderColor: C.paper, alignItems: 'center', justifyContent: 'center' },
 });

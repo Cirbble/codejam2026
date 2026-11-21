@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Linking, Platform } from 'react-native';
-import { getDevice, joinCodeFrom, RoomView, SERVER } from './api';
+import { getDevice, joinCodeFrom, prefetchCards, RoomView, SERVER } from './api';
 import { cap } from './api';
 import { clearReminders, initNotifications, remindRound } from './notify';
 
@@ -101,6 +101,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
       } else if (m.t === 'state') {
         skews.current = [...skews.current.slice(-19), Date.now() - m.room.now];
         setSkew(Math.min(...skews.current));
+        if (m.room.reveal?.length) prefetchCards(m.room.reveal);
         setRoom(m.room);
       } else if (m.t === 'error') {
         setError(m.message || 'Something went wrong');
@@ -189,7 +190,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
       sessionRef.current = null;
       setSession(null);
       setRoom(null);
-      initNotifications().catch(() => {}); // ask for notifications when a squad starts, not at first launch
+      if (!first.solo) initNotifications().catch(() => {}); // squads only, and only when one starts
       pending.current = { ...first, device: await getDevice(), op: Date.now().toString(36) + Math.random().toString(36).slice(2) }; // op makes a retried create/join idempotent
       want.current = true;
       open();

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, Share, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { Card, fetchCollection, rarityLine, SITE } from '../api';
+import { Card, fetchCollection, peekCollection, rarityLine, SITE } from '../api';
 import { shareText } from '../share';
 import { GameCard } from '../components/GameCard';
 import { Bar, Button, H, Mono, Screen, T, tap } from '../components/ui';
@@ -10,7 +10,7 @@ import { C, F, Tier, TIER_ORDER, TIERS } from '../theme';
 export function Collection() {
   const nav = useNav();
   const { width } = useWindowDimensions();
-  const [cards, setCards] = useState<Card[] | null>(null);
+  const [cards, setCards] = useState<Card[] | null>(peekCollection);
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState<Tier | null>(null);
   useEffect(() => {

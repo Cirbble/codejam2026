@@ -33,7 +33,7 @@ const MAX_CALLS_PER_HOUR = Number(process.env.JUDGE_MAX_CALLS || 1500);
 /** Share of the hourly budget only squad finds may use, so daily traffic can't starve a live squad game. */
 const SQUAD_RESERVE = Number(process.env.JUDGE_SQUAD_RESERVE || 0.3);
 /** Per client IP: provider attempts per hour (venue Wi-Fi puts a whole squad behind one IP). */
-export const IP_HOURLY_JUDGE = Number(process.env.IP_HOURLY_JUDGE || 200);
+export const IP_HOURLY_JUDGE = Number(process.env.IP_HOURLY_JUDGE || 900);
 const recent: number[] = [];
 const ipRecent = new Map<string, number[]>();
 /** Provider attempts charged to this IP in the last hour. */

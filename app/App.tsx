@@ -1,6 +1,7 @@
 import { BricolageGrotesque_600SemiBold, BricolageGrotesque_800ExtraBold } from '@expo-google-fonts/bricolage-grotesque';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono';
+import { Feather } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -23,7 +24,8 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 /** Quick play shows its own start screen until a solo room exists, then the shared room screens. */
 function SoloGate() {
   const squad = useSquad();
-  return squad.session ? <Squad /> : <SoloStart />;
+  if (squad.session && (!squad.room || squad.room.solo)) return <Squad />;
+  return <SoloStart />;
 }
 
 function Router() {
@@ -56,12 +58,13 @@ export default function App() {
     Inter_500Medium,
     Inter_600SemiBold,
     JetBrainsMono_500Medium,
+    ...Feather.font,
   });
   const ready = ok || !!err; // a font failure falls back to system fonts instead of a stuck splash
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});
   }, [ready]);
-  if (!ready) return null;
+  if (!ready) return <View style={{ flex: 1, backgroundColor: C.paper }} />;
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />

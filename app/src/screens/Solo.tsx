@@ -2,8 +2,9 @@ import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useEffect, useState } from 'react';
 import { FlatList, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { BoardRow, fetchBoard, type RoomView } from '../api';
-import { GameCard } from '../components/GameCard';
+import { useCameraPermissions } from 'expo-camera';
+import { BoardRow, cap, fetchBoard, type RoomView } from '../api';
+import { CardBack, GameCard } from '../components/GameCard';
 import { Bar, Button, H, Label, Mono, Screen, T } from '../components/ui';
 import { useNav } from '../nav';
 import { useSquad } from '../squad';
@@ -13,6 +14,7 @@ import { C, F, TIERS } from '../theme';
 export function SoloStart() {
   const nav = useNav();
   const squad = useSquad();
+  const [perm, requestPerm] = useCameraPermissions();
   const [team, setTeam] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -37,7 +39,6 @@ export function SoloStart() {
           <H size={30} style={{ color: C.paper }}>
             3 rounds. 60 seconds each.
           </H>
-          <T style={{ color: '#C9D0C2' }}>Find something in the room that fits the prompt. Rarer finds score more.</T>
         </View>
         <View style={{ gap: 8 }}>
           <Label>Team</Label>
@@ -52,9 +53,11 @@ export function SoloStart() {
           icon="play"
           disabled={!t}
           busy={busy}
-          onPress={() => {
+          onPress={async () => {
             AsyncStorage.multiSet([['rarefind.team', t], ['rarefind.name', name.trim()]]).catch(() => {});
             setBusy(true);
+            // ask for the camera now, so the permission prompt doesn't eat round one
+            if (!perm?.granted && perm?.canAskAgain !== false) await requestPerm().catch(() => null);
             squad.solo(n, t);
           }}
         />
@@ -71,12 +74,6 @@ export function SoloResults({ room }: { room: RoomView }) {
   const me = room.players[0];
   const cards = room.rounds.flatMap((r) => r.cards);
   const best = [...cards].sort((a, b) => b.points - a.points || b.rarity - a.rarity || a.at - b.at)[0];
-  const again = () => {
-    const team = room.team ?? '';
-    const name = me?.name ?? team;
-    squad.leave();
-    setTimeout(() => squad.solo(name, team), 300);
-  };
   return (
     <Screen>
       <Bar onBack={() => { squad.leave(); nav.reset(); }} title={room.team ?? 'Quick play'} />
@@ -98,8 +95,8 @@ export function SoloResults({ room }: { room: RoomView }) {
             return c ? (
               <GameCard key={i} card={c} width={Math.min(104, (width - 60) / 3)} flat live={false} />
             ) : (
-              <View key={i} style={[styles.miss, { width: Math.min(104, (width - 60) / 3), height: Math.min(104, (width - 60) / 3) * 1.4 }]}>
-                <Feather name="x" size={22} color={C.faint} />
+              <View key={i} style={{ opacity: 0.55 }}>
+                <CardBack width={Math.min(104, (width - 60) / 3)} />
               </View>
             );
           })}
@@ -113,9 +110,9 @@ export function SoloResults({ room }: { room: RoomView }) {
       <View style={{ gap: 10 }}>
         <Button title="See the board" icon="award" onPress={() => nav.push({ name: 'board' })} />
         <View style={{ flexDirection: 'row', gap: 12 }}>
-          <Button title="Play again" icon="rotate-ccw" kind="line" onPress={again} style={{ flex: 1, paddingHorizontal: 10 }} />
-          <Button title="Done" kind="line" onPress={() => { squad.leave(); nav.reset(); }} style={{ flex: 1, paddingHorizontal: 10 }} />
+          <Button title="Play outside as a squad" icon="users" kind="line" onPress={() => { squad.leave(); nav.reset({ name: 'squad' }); }} style={{ flex: 1, paddingHorizontal: 10 }} />
         </View>
+        <Button title="Done" kind="quiet" onPress={() => { squad.leave(); nav.reset(); }} />
       </View>
     </Screen>
   );

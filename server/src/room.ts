@@ -95,8 +95,11 @@ export class Room {
   solo: boolean;
   team: string | null;
   private onEnd?: (room: Room) => void;
-  /** solo: the run went onto the leaderboard (guards against recording twice) */
+  /** solo: the run is safely on the leaderboard (set only after the board was written) */
   boardRecorded = false;
+  /** solo: unique id of this run, the leaderboard's idempotency key */
+  runId: string | null = null;
+  private recordRetryAt = 0;
   /** solo, ended: the team's standing right after this run */
   board: { rank: number; best: number } | null = null;
 
@@ -186,6 +189,7 @@ export class Room {
     for (const p of this.players.values()) p.score = 0;
     this.rounds = [];
     this.replies.clear();
+    if (this.solo) this.runId = `${this.code}-${token(8)}`;
     this.round = 1;
     this.found.clear();
     this.tries.clear();
@@ -225,9 +229,25 @@ export class Room {
     return true;
   }
 
+  /** Put the finished solo run on the board; on a save failure, retry from tick() every 5 s. */
+  private tryRecord() {
+    if (!this.onEnd) return;
+    try {
+      this.onEnd(this);
+      this.boardRecorded = true;
+    } catch (e) {
+      console.warn('[room] board save failed, will retry', (e as Error).message);
+      this.recordRetryAt = this.now() + 5000;
+    }
+  }
+
   tick() {
     const now = this.now();
     this.tickHost(now);
+    if (this.solo && this.phase === 'ended' && !this.boardRecorded && this.onEnd && now >= this.recordRetryAt) {
+      this.tryRecord();
+      this.touch();
+    }
     if (this.endsAt == null || now < this.endsAt) return;
     if (this.phase === 'countdown') this.toHunting();
     else if (this.phase === 'hunting') this.toReveal();
@@ -286,14 +306,7 @@ export class Room {
       this.endsAt = null;
       this.endedAt = this.now();
       this.found.clear();
-      if (this.solo && !this.boardRecorded) {
-        this.boardRecorded = true;
-        try {
-          this.onEnd?.(this);
-        } catch (e) {
-          console.warn('[room] onEnd failed', (e as Error).message);
-        }
-      }
+      if (this.solo && !this.boardRecorded) this.tryRecord();
       this.touch();
       return;
     }
@@ -474,6 +487,7 @@ export class Room {
       team: this.team,
       boardRecorded: this.boardRecorded,
       board: this.board,
+      runId: this.runId,
     };
   }
 
@@ -481,6 +495,7 @@ export class Room {
   static restore(s: ReturnType<Room['snapshot']>, now: Clock = Date.now, pick?: PickPrompts, onEnd?: (room: Room) => void): Room {
     const r = new Room(s.code, s.quick, now, pick, { solo: !!s.solo, team: s.team ?? null, onEnd });
     r.boardRecorded = !!s.boardRecorded;
+    r.runId = s.runId ?? null;
     r.board = s.board ?? null;
     const down = Math.max(0, now() - (s.savedAt ?? now()));
     r.phase = s.phase;

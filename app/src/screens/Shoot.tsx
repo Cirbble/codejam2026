@@ -64,7 +64,8 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
     if (mode !== 'squad') return;
     const closed = roomPhase !== 'hunting' || roomRound !== startRound.current;
     if (!closed) return;
-    if (phase.k === 'judging') return; // the verdict is still on its way
+    const mineIn = !!squad.room?.players.find((p) => p.id === squad.session?.playerId)?.found || !!squad.room?.rounds.some((r) => r.cards.some((c) => c.playerId === squad.session?.playerId && c.promptId === promptId));
+    if (phase.k === 'judging' && !mineIn) return; // the verdict is still on its way
     const t = setTimeout(() => nav.back(), phase.k === 'won' ? 2200 : phase.k === 'aim' ? 0 : 2500);
     return () => clearTimeout(t);
   }, [mode, roomPhase, roomRound, phase.k, nav]);
@@ -217,10 +218,10 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
           />
         </View>
       )}
-      {(!perm || denied) && (
+      {denied && (
         <View style={styles.center}>
           <Feather name="camera-off" size={40} color={C.paper} />
-          <T style={{ color: C.paper, textAlign: 'center', fontFamily: F.bodyBold }}>{!perm ? 'Opening the camera' : Platform.OS === 'web' ? 'Allow the camera for this site in your browser, then reload.' : 'Rarefind needs the camera to see your finds.'}</T>
+          <T style={{ color: C.paper, textAlign: 'center', fontFamily: F.bodyBold }}>{Platform.OS === 'web' ? 'Allow the camera for this site in your browser, then reload.' : 'Rarefind needs the camera to see your finds.'}</T>
           {denied && (
             <Button
               title={Platform.OS === 'web' ? 'Ask again' : perm?.canAskAgain ? 'Allow camera' : 'Open settings'}

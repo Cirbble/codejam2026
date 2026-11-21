@@ -64,8 +64,8 @@ export function GameCard({ card, width, onPress, style, live = true, flat }: { c
     >
       {frame}
       <View style={[styles.inner, { borderRadius: Math.max(6, 12 * s) }]}>
-        {!compact && (
-          <View style={[styles.head, thumb && { height: 24, paddingHorizontal: 9 }, { paddingHorizontal: 12 * s, height: 34 * s }]}>
+        {!compact && !thumb && (
+          <View style={[styles.head, { paddingHorizontal: 12 * s, height: 34 * s }]}>
             <Text numberOfLines={1} style={{ flex: 1, fontFamily: F.bodyBold, fontSize: thumb ? 10 : 11 * s + 1, letterSpacing: thumb ? 0.6 : 1, textTransform: 'uppercase', color: C.inkSoft }}>
               {card.promptText}
             </Text>
@@ -73,7 +73,7 @@ export function GameCard({ card, width, onPress, style, live = true, flat }: { c
           </View>
         )}
         <View style={[styles.photo, compact ? { margin: 0, borderWidth: 0, borderRadius: 0 } : { marginHorizontal: 10 * s, borderRadius: 8 * s }]}>
-          <Image source={{ uri: photoUrl(card) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} />
+          <Image source={{ uri: photoUrl(card, width < 220) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={120} cachePolicy="memory-disk" recyclingKey={card.id} />
         </View>
         {compact ? (
           <View style={{ height: Math.max(14, width * 0.16), backgroundColor: t.color, alignItems: 'center', justifyContent: 'center' }}>

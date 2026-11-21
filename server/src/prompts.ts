@@ -155,6 +155,11 @@ export function dailyPrompts(day: string): PromptDef[] {
   return pickPrompts(OUTDOOR, 5, seeded(`rarefind-daily:${day}`));
 }
 
+/** Solo quick play: one fixed set per Toronto day, the same 3 prompts for every team (opens with "something red"). */
+export function soloPrompts(day: string): PromptDef[] {
+  return pickPrompts(INDOOR, 3, seeded(`rarefind-quick:${day}`), QUICK_OPENER);
+}
+
 export function squadPrompts(quick: boolean, rand: () => number = Math.random): PromptDef[] {
   return quick ? pickPrompts(INDOOR, 5, rand, QUICK_OPENER) : pickPrompts(OUTDOOR, 5, rand);
 }

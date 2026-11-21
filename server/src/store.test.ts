@@ -100,3 +100,17 @@ test('startup check drops cards whose photo is missing, with their references', 
   assert.equal(store.usedPhoto('o-blue', 'devZ', 'hz'), false, 'photo mark freed');
   assert.equal(store.dropCardsWithoutPhotos(), 0);
 });
+
+test('user strings as keys: __proto__ / constructor labels, devices and days are plain entries', () => {
+  const c = store.countFind('o-unsafe', 'constructor', '__proto__', 'h-unsafe');
+  assert.equal(c.firstEver, true);
+  assert.equal(store.promptTotals('o-unsafe').map['constructor'], 1);
+  assert.equal(store.countFind('o-unsafe', '__proto__', 'dev', 'h2').sameCount, 1);
+  const e = store.dailyEntryMut('__proto__', 'constructor');
+  e.tries['toString'] = 2;
+  assert.equal(store.dailyEntry('__proto__', 'constructor').tries['toString'], 2);
+  assert.equal(({} as any).constructor === Object, true, 'Object.prototype untouched');
+  store.commitFinds();
+  const raw = JSON.parse(readFileSync(join(process.env.DATA_DIR!, 'finds.json'), 'utf8'));
+  assert.equal(raw.daily['__proto__'].constructor.tries.toString, 2);
+});

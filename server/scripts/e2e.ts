@@ -131,6 +131,14 @@ check(a.room.phase === 'hunting' && a.room.players.find((p: any) => p.id === a.i
 check(a.room.players.every((p: any) => p.score === 0), 'scores stay hidden until the reveal');
 const img = await fetch(BASE + cardA.photo);
 check(img.status === 200 && img.headers.get('content-type') === 'image/jpeg', 'card photo served');
+{
+  const full = Buffer.from(await img.arrayBuffer()).length;
+  const th = await fetch(`${BASE}${cardA.photo}?w=240`);
+  const tb = Buffer.from(await th.arrayBuffer());
+  check(th.status === 200 && th.headers.get('content-type') === 'image/jpeg' && tb[0] === 0xff && tb.length < full, `240 px thumbnail served (${tb.length} vs ${full} bytes)`);
+  const q = await fetch(`${BASE}/q`, { redirect: 'manual' });
+  check(q.status === 302 && q.headers.get('location') === '/play/?solo=1', 'GET /q -> 302 /play/?solo=1');
+}
 
 await sleep(4200); // per-device judge gap
 const fb = await squadFind(b, hydrant);
@@ -204,6 +212,8 @@ b.ws.close();
   await waitFor(s, (r) => !!r, 2000);
   check(s.room?.solo === true && s.room.team === teamName.replace(/\s+/g, ' ') && s.room.totalRounds === 3, `solo room ${s.code} for "${s.room?.team}"`);
   check(await waitFor(s, (r) => r.phase === 'countdown' || r.phase === 'hunting', 2000), 'solo starts on its own');
+  const again2 = await connect({ t: 'create', name: 'Solo', quick: true, solo: true, team: teamName, op: hex(8) }, s.device).catch((e) => e as Error);
+  check(again2 instanceof Error && /rate/.test(again2.message), 'one solo run per phone every 30 s');
   const crash = await connect({ t: 'join', code: s.code, name: 'Crasher' }).catch((e) => e as Error);
   check(crash instanceof Error && /full/.test(crash.message), 'joining a solo room -> full');
   check(await waitFor(s, (r) => r.phase === 'hunting' && r.prompt?.id === 'i-red', 6000), 'solo round 1 is "something red"');
