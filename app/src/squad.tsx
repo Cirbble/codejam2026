@@ -36,6 +36,8 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
   const skews = useRef<number[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMsg = useRef(0);
+
 
   const open = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -45,6 +47,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
     sock.onopen = () => {
       if (ws.current !== sock) return;
       attempts.current = 0;
+      lastMsg.current = Date.now();
       setConnected(true);
       const s = sessionRef.current;
       const first = s ? { t: 'resume', ...s } : pending.current;
@@ -52,6 +55,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
     };
     sock.onmessage = (e) => {
       if (ws.current !== sock) return;
+      lastMsg.current = Date.now();
       let m: any;
       try {
         m = JSON.parse(String(e.data));
@@ -90,6 +94,18 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // the server sends state at least every few seconds; silence means a dead socket, even if it still says OPEN
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!want.current || !sessionRef.current) return;
+      if (ws.current?.readyState === WebSocket.OPEN && Date.now() - lastMsg.current > 12_000) {
+        setConnected(false);
+        open();
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [open]);
+
   // resume a saved squad on launch
   useEffect(() => {
     AsyncStorage.getItem(KEY)
@@ -107,7 +123,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
   // reconnect promptly when the app comes back to the foreground
   useEffect(() => {
     const sub = AppState.addEventListener('change', (st) => {
-      if (st === 'active' && want.current && ws.current?.readyState !== WebSocket.OPEN) open();
+      if (st === 'active' && want.current && (ws.current?.readyState !== WebSocket.OPEN || Date.now() - lastMsg.current > 6000)) open();
     });
     return () => sub.remove();
   }, [open]);
@@ -118,7 +134,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
       sessionRef.current = null;
       setSession(null);
       setRoom(null);
-      pending.current = { ...first, device: await getDevice() };
+      pending.current = { ...first, device: await getDevice(), op: Date.now().toString(36) + Math.random().toString(36).slice(2) }; // op makes a retried create/join idempotent
       want.current = true;
       open();
       if (ackTimer.current) clearTimeout(ackTimer.current);

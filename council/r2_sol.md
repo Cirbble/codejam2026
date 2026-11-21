@@ -1,0 +1,19 @@
+**8/10 overall — code: 7.5; product: 8.5.** A compelling hackathon loop with strong Touch Grass fit. The remaining weaknesses are multiplayer recovery and scoring integrity.
+
+Both typechecks pass. **20 engine tests pass** with `--test-isolation=none`; store tests are blocked by sandbox `EPERM` on temporary-file creation. No files modified. Physical-phone and live Gemini behavior remain unverified.
+
+Prioritized findings:
+
+1. **P1 — Repeat finds retain the “first-ever” bonus.** [store.ts:91](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/store.ts:91), [rarity.ts:16](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/rarity.ts:16). Deduplication leaves `sameCount === 1`, so repeated photos/labels can keep earning 100 points across games. Confirmed with an in-memory reproduction. **Fix:** pass an explicit `firstEverLabel` flag into scoring, computed before incrementing counts; deduplicated submissions must never receive that bonus.
+
+2. **P1 — A dropped join acknowledgement creates ghost players.** [squad.tsx:50](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/squad.tsx:50), [index.ts:407](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/index.ts:407). Reconnecting before receiving `welcome` repeats `join`, creating another player. The disconnected duplicate prevents early reveals and occupies a room slot. **Fix:** make create/join idempotent using a client operation ID, returning the original credentials on retry.
+
+3. **P1 — Disconnected squads look playable; controls silently discard actions.** [squad.tsx:136](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/squad.tsx:136), [Squad.tsx:173](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/screens/Squad.tsx:173). `send()` drops commands unless the socket is open, while screens ignore `connected`. Start/skip/settings can appear broken during network changes. **Fix:** show reconnecting state, disable dependent controls until resume completes, and acknowledge consequential commands.
+
+4. **P2 — Failed photos survive only while Shoot stays mounted.** [Shoot.tsx:59](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/screens/Shoot.tsx:59). Photo data and submission ID live in a retry closure. Back, refresh, or process eviction loses them, weakening the advertised flaky-network recovery. **Fix:** persist pending photo metadata and submission ID outside the screen; restore and reconcile submissions on return.
+
+5. **P2 — Rapid shutter taps race capture and verdict state.** [Shoot.tsx:73](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/screens/Shoot.tsx:73). The shutter remains enabled during capture/resizing. Multiple requests can produce a successful lock followed by a rate/locked error that replaces the success screen. **Fix:** acquire a synchronous capture guard before the first `await`, disable the shutter immediately, and ignore obsolete responses.
+
+6. **P2 — Successful replies do not guarantee durable progress.** [store.ts:42](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/store.ts:42), [index.ts:241](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/index.ts:241). Flush failures are swallowed, and cards, counts, daily locks, and rooms commit separately. A crash between writes can leave collectible cards without their locks or scores. **Fix:** commit accepted finds transactionally—SQLite on the volume is sufficient—and propagate write failures.
+
+7. **P2 — Squad results omit promised outcomes.** [Squad.tsx:318](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/screens/Squad.tsx:318). The server computes each player’s best card and round winners, but the app shows one overall best card and colored dots. Score ties also arbitrarily crown the first player. **Fix:** render the supplied results, allow completed-card inspection, and explicitly display tied winners.

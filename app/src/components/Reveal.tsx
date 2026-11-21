@@ -44,6 +44,7 @@ export function Pending({ width }: { width: number }) {
 }
 
 /** Flips a face-down card over, then stamps its tier. */
+/** Flips a face-down card over, then lands its tier and points underneath. */
 export function FlipReveal({ card, width }: { card: Card; width: number }) {
   const f = useRef(new Animated.Value(0)).current;
   const stamp = useRef(new Animated.Value(0)).current;
@@ -54,8 +55,6 @@ export function FlipReveal({ card, width }: { card: Card; width: number }) {
       Animated.delay(big ? 650 : 250), // the rarer the card, the longer the beat before it turns
       Animated.timing(f, { toValue: 1, duration: 520, easing: Easing.out(Easing.cubic), useNativeDriver: native }),
       Animated.spring(stamp, { toValue: 1, friction: 5, tension: 140, useNativeDriver: native }),
-      Animated.delay(1300),
-      Animated.timing(fade, { toValue: 0, duration: 400, useNativeDriver: native }), // lift the stamp off so the photo shows
     ]).start();
     const t = setTimeout(() => buzz(card.tier), (big ? 650 : 250) + 520);
     return () => clearTimeout(t);
@@ -63,21 +62,20 @@ export function FlipReveal({ card, width }: { card: Card; width: number }) {
   const backX = f.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, 0, 0] });
   const frontX = f.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0, 1] });
   const lift = f.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -18, 0] });
-  const st = stamp.interpolate({ inputRange: [0, 1], outputRange: [2.2, 1] });
+  const st = stamp.interpolate({ inputRange: [0, 1], outputRange: [1.6, 1] });
   const t = TIERS[card.tier];
   return (
-    <View style={{ width, height: width * CARD_RATIO + 8, alignItems: 'center' }}>
+    <View style={{ width, height: width * CARD_RATIO + 70, alignItems: 'center' }}>
       <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', transform: [{ translateY: lift }, { scaleX: backX }] }]}>
         <CardBack width={width} />
       </Animated.View>
       <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', transform: [{ translateY: lift }, { scaleX: frontX }] }]}>
         <GameCard card={card} width={width} />
       </Animated.View>
-      <Animated.View
-        pointerEvents="none"
-        style={[styles.stamp, { borderColor: t.color, opacity: Animated.multiply(stamp, fade), transform: [{ scale: st }, { rotate: '-8deg' }] }]}
-      >
-        <Text style={{ fontFamily: F.display, fontSize: 26, color: t.color, letterSpacing: 1 }}>{t.name.toUpperCase()}</Text>
+      <Animated.View style={{ position: 'absolute', top: width * CARD_RATIO + 22, alignSelf: 'center', alignItems: 'center', opacity: stamp, transform: [{ scale: st }] }}>
+        <Text style={{ fontFamily: F.display, fontSize: 32, color: t.color, letterSpacing: -0.5 }}>
+          {t.name} · +{card.points}
+        </Text>
       </Animated.View>
     </View>
   );

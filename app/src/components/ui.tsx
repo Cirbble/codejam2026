@@ -19,7 +19,7 @@ export function Label({ style, ...p }: TextProps) {
 }
 
 export function Mono({ style, ...p }: TextProps) {
-  return <Text {...p} style={[{ fontFamily: F.mono, color: C.inkSoft, fontSize: 13, fontVariant: ['tabular-nums'] }, style]} />;
+  return <Text {...p} style={[{ fontFamily: F.mono, color: C.inkSoft, fontSize: 14, fontVariant: ['tabular-nums'] }, style]} />;
 }
 
 export const tap = (kind: 'light' | 'medium' = 'light') => {

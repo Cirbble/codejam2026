@@ -70,8 +70,11 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
     else setPhase({ k: 'nope', uri, verdict: res.verdict, triesLeft: res.triesLeft, screen: res.reason === 'screen' });
   };
 
+  const busy = useRef(false); // one capture at a time: a second tap can't race the first
   const shoot = async () => {
-    if (!cam.current || !ready) return;
+    if (!cam.current || !ready || busy.current) return;
+    busy.current = true;
+    setReady(false);
     tap('medium');
     try {
       const pic = await cam.current.takePictureAsync({ quality: 0.8, skipProcessing: Platform.OS === 'android' });
@@ -81,6 +84,8 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
     } catch {
       setPhase({ k: 'error', message: "The camera didn't take the photo. Try again." });
       setCamKey((k) => k + 1);
+    } finally {
+      busy.current = false;
     }
   };
 
@@ -120,10 +125,9 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
           {phase.k === 'won' && (
             <>
               <FlipReveal card={phase.card} width={cardW} />
-              <View style={{ alignItems: 'center', gap: 6, paddingHorizontal: 8 }}>
-                <T style={{ fontFamily: F.bodyBold, fontSize: 18, color: TIERS[phase.card.tier].color }}>+{phase.card.points} points</T>
-                <T style={{ textAlign: 'center', color: C.inkSoft }}>{phase.card.verdict}</T>
-              </View>
+              <T style={{ textAlign: 'center', fontFamily: F.bodyBold, color: C.ink }}>
+                {phase.card.sameCount <= 1 ? 'Nobody else has found this' : `${phase.card.sameCount} of ${phase.card.totalCount} finds were the same`}
+              </T>
             </>
           )}
           {(phase.k === 'nope' || phase.k === 'error') && (
@@ -135,11 +139,11 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
                 </View>
               ) : null}
               <View style={{ alignItems: 'center', gap: 8, paddingHorizontal: 8 }}>
-                <Label style={{ color: C.blaze }}>{phase.k === 'error' ? 'Not judged' : phase.screen ? 'Find the real thing' : 'No match'}</Label>
-                <H size={24} style={{ textAlign: 'center' }}>
-                  {phase.k === 'nope' ? phase.verdict : phase.message}
+                <H size={30} style={{ textAlign: 'center' }}>
+                  {phase.k === 'error' ? 'Not judged yet' : phase.screen ? 'Find the real thing' : 'Not a match'}
                 </H>
-                {phase.k === 'nope' && phase.triesLeft != null && <Mono style={{ color: C.blaze }}>{phase.triesLeft} tries left</Mono>}
+                <T style={{ textAlign: 'center', fontSize: 17, color: C.ink }}>{phase.k === 'nope' ? phase.verdict : phase.message}</T>
+                {phase.k === 'nope' && phase.triesLeft != null && <T style={{ fontFamily: F.bodyBold, color: C.blaze }}>{phase.triesLeft} {phase.triesLeft === 1 ? 'try' : 'tries'} left today</T>}
               </View>
             </>
           )}

@@ -39,10 +39,19 @@ export default function Squad() {
   if (!squad.session) return <Start />;
   if (!squad.room) return <Connecting />;
   const r = squad.room;
-  if (r.phase === 'lobby') return <Lobby room={r} />;
-  if (r.phase === 'countdown' || r.phase === 'hunting') return <Hunt room={r} />;
-  if (r.phase === 'reveal') return <RoundReveal room={r} />;
-  return <Results room={r} />;
+  const screen =
+    r.phase === 'lobby' ? <Lobby room={r} /> : r.phase === 'countdown' || r.phase === 'hunting' ? <Hunt room={r} /> : r.phase === 'reveal' ? <RoundReveal room={r} /> : <Results room={r} />;
+  return (
+    <View style={{ flex: 1 }}>
+      {screen}
+      {!squad.connected && (
+        <View pointerEvents="none" style={styles.offline}>
+          <Feather name="wifi-off" size={16} color={C.white} />
+          <Text style={{ fontFamily: F.bodyBold, color: C.white, fontSize: 14 }}>Reconnecting</Text>
+        </View>
+      )}
+    </View>
+  );
 }
 
 function Connecting() {
@@ -168,9 +177,9 @@ function Lobby({ room }: { room: RoomView }) {
                 <T style={{ fontFamily: F.bodyBold }}>Quick indoor rounds</T>
                 <Mono>{room.quick ? '60 s each' : '3 min each'}</Mono>
               </View>
-              <Switch value={room.quick} onValueChange={(v) => squad.send({ t: 'settings', quick: v })} trackColor={{ true: C.ink, false: C.line }} thumbColor={C.white} />
+              <Switch value={room.quick} disabled={!squad.connected} onValueChange={(v) => squad.send({ t: 'settings', quick: v })} trackColor={{ true: C.ink, false: C.line }} thumbColor={C.white} />
             </View>
-            <Button title="Start" icon="play" kind="blaze" onPress={() => squad.send({ t: 'start' })} />
+            <Button title="Start" icon="play" kind="blaze" onPress={() => squad.send({ t: 'start' })} disabled={!squad.connected} />
           </>
         ) : (
           <Mono style={{ textAlign: 'center', paddingVertical: 18 }}>Waiting for the host to start</Mono>
@@ -254,7 +263,7 @@ function Hunt({ room }: { room: RoomView }) {
             onPress={() => room.prompt && nav.push({ name: 'shoot', promptId: room.prompt.id, promptText: room.prompt.text, examples: room.prompt.examples, mode: 'squad' })}
           />
         )}
-        {host && <Button title="End round now" kind="quiet" onPress={() => squad.send({ t: 'skip' })} />}
+        {host && <Button title="End round now" kind="quiet" onPress={() => squad.send({ t: 'skip' })} disabled={!squad.connected} />}
       </View>
     </Screen>
   );
@@ -323,20 +332,25 @@ function Results({ room }: { room: RoomView }) {
   const all = room.rounds.flatMap((r) => r.cards);
   const best = [...all].sort((a, b) => b.points - a.points || b.rarity - a.rarity)[0];
   const ranking = [...room.players].sort((a, b) => b.score - a.score);
+  const top = ranking[0]?.score ?? 0;
+  const winners = room.winners ?? (top > 0 ? ranking.filter((p) => p.score === top).map((p) => p.id) : []);
+  const nameOf = (id: string) => (id === me ? 'You' : room.players.find((p) => p.id === id)?.name ?? '');
+  const cardById = new Map(all.map((c) => [c.id, c]));
+  const roundsWon = (id: string) => (room.roundWinners ?? []).map((w, i) => (w === id ? i + 1 : 0)).filter(Boolean);
   const cw = Math.min(width * 0.56, 230);
   return (
     <Screen>
       <Bar onBack={nav.back} title="Squad results" />
       <ScrollView contentContainerStyle={{ gap: 24, paddingBottom: 16 }} showsVerticalScrollIndicator={false}>
-        {ranking[0] && (
-          <View style={{ alignItems: 'center', gap: 2 }}>
-            <Label>Winner</Label>
+        <View style={{ alignItems: 'center', gap: 2 }}>
+          <Label>{winners.length > 1 ? 'Tied for first' : winners.length === 1 ? 'Winner' : 'No finds this game'}</Label>
+          {winners.length > 0 && (
             <H size={40} style={{ textAlign: 'center' }}>
-              {ranking[0].id === me ? 'You' : ranking[0].name}
+              {winners.map(nameOf).join(' & ')}
             </H>
-            <T style={{ fontFamily: F.bodyBold, color: C.inkSoft }}>{ranking[0].score} points</T>
-          </View>
-        )}
+          )}
+          {winners.length > 0 && <T style={{ fontFamily: F.bodyBold, color: C.inkSoft }}>{top} points</T>}
+        </View>
         {best && (
           <View style={{ alignItems: 'center', gap: 10 }}>
             <Label>Find of the game · {best.playerName}</Label>
@@ -346,8 +360,10 @@ function Results({ room }: { room: RoomView }) {
         <View style={{ gap: 8 }}>
           {ranking.map((p, i) => {
             const theirs = all.filter((c) => (c.playerId ? c.playerId === p.id : c.playerName === p.name));
+            const bestCard = (room.best?.[p.id] && cardById.get(room.best[p.id])) || [...theirs].sort((a, b) => b.points - a.points)[0];
+            const won = roundsWon(p.id);
             return (
-              <View key={p.id} style={[styles.rank, i === 0 && { backgroundColor: C.card }]}>
+              <View key={p.id} style={[styles.rank, winners.includes(p.id) && { backgroundColor: C.card }]}>
                 <Mono style={{ width: 22, color: C.ink, fontSize: 16 }}>{i + 1}</Mono>
                 <Avatar id={p.id} name={p.name} size={32} />
                 <View style={{ flex: 1, minWidth: 0 }}>
@@ -355,13 +371,13 @@ function Results({ room }: { room: RoomView }) {
                     {p.name}
                     {p.id === me ? ' (you)' : ''}
                   </T>
-                  <View style={{ flexDirection: 'row', gap: 4, marginTop: 4 }}>
-                    {theirs.map((c) => (
-                      <View key={c.id} style={{ width: 10, height: 14, borderRadius: 3, backgroundColor: TIERS[c.tier].color, borderWidth: 1, borderColor: C.ink }} />
-                    ))}
-                  </View>
+                  <Mono style={{ marginTop: 2 }}>
+                    {theirs.length} {theirs.length === 1 ? 'find' : 'finds'}
+                    {won.length ? ` · won round ${won.join(', ')}` : ''}
+                  </Mono>
                 </View>
-                <Text style={{ fontFamily: F.display, fontSize: 26, color: C.ink, fontVariant: ['tabular-nums'] }}>{p.score}</Text>
+                {bestCard && <GameCard card={bestCard} width={44} flat live={false} />}
+                <Text style={{ fontFamily: F.display, fontSize: 26, color: C.ink, fontVariant: ['tabular-nums'], minWidth: 40, textAlign: 'right' }}>{p.score}</Text>
               </View>
             );
           })}
@@ -391,6 +407,7 @@ const styles = StyleSheet.create({
   track: { height: 8, borderRadius: 999, backgroundColor: C.paperDeep, marginTop: 10, overflow: 'hidden' },
   pchip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 12, borderRadius: 999, borderWidth: 2, borderColor: C.ink },
   locked: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, height: 58, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed', borderColor: C.ink },
+  offline: { position: 'absolute', top: 54, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, height: 34, borderRadius: 999, backgroundColor: C.ink },
   promptCard: { backgroundColor: C.ink, borderRadius: 26, padding: 24, paddingTop: 22, gap: 14, transform: [{ rotate: '-1.5deg' }], boxShadow: '6px 8px 0px rgba(18,21,15,0.18)' },
   rank: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 2, borderColor: C.ink },
 });

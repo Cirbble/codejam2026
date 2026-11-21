@@ -1,0 +1,19 @@
+**8/10 overall — code 7.5, product 8.5.** Strong 24-hour entry: the outdoor search, rarity reward, and shared reveal fit Touch Grass well. Remaining weaknesses are connection recovery, scoring integrity, and finishing the squad experience.
+
+Both typechecks pass. The requested test runner hit sandbox `spawn EPERM`; running the engine suite in-process passed **20/20 tests**. Store tests remain unverified. No files modified; no live-phone validation.
+
+Prioritized findings:
+
+1. **P1 — Squad connections can stall silently.** [app/src/squad.tsx:110](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/squad.tsx:110), [136](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/squad.tsx:136). Foreground recovery trusts `readyState === OPEN`, even when the connection has stopped delivering messages. Meanwhile, disconnected Start/Skip actions silently disappear, and screens ignore `connected`. **Fix:** detect stale server heartbeats, reconnect/resume on foreground, and disable commands until a fresh room state arrives.
+
+2. **P1 — Refused submissions can exhaust server memory.** [server/src/index.ts:116](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/index.ts:116). Every unique submission creates a cached promise and 30-minute timer. Requests for nonexistent daily prompts return `closed` before rate limiting and remain cached, allowing unlimited entries without Gemini calls. **Fix:** rate-limit before caching, bound the cache, and avoid retaining precondition failures.
+
+3. **P2 — Lost join acknowledgments create ghost players.** [app/src/squad.tsx:50](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/squad.tsx:50), [server/src/index.ts:407](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/index.ts:407). If `welcome` is lost, reconnect repeats `join`, creating another player. The disconnected duplicate consumes capacity and prevents early reveals. **Fix:** give create/join a stable request ID and return the original credentials when retried.
+
+4. **P2 — Repeat finds retain the first-ever bonus.** [server/src/index.ts:183](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/index.ts:183), [server/src/rarity.ts:16](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/rarity.ts:16). Deduplication leaves `sameCount === 1`; scoring interprets that as a new discovery every time. Repeated finds across games can keep awarding 100 points. **Fix:** pass an explicit `firstEver` flag derived from a fresh count insertion and the previous label count.
+
+5. **P2 — Rapid shutter taps race capture and judging.** [app/src/screens/Shoot.tsx:73](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/screens/Shoot.tsx:73). The shutter stays enabled through capture and resizing. Multiple captures can generate competing submissions whose responses overwrite each other, including replacing success with an error. **Fix:** acquire a synchronous capture lock before the first `await`, disable the shutter, and ignore stale responses.
+
+6. **P2 — Successful responses do not guarantee durable saves.** [server/src/store.ts:41](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/store.ts:41), [server/src/index.ts:241](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/index.ts:241). Flush errors are swallowed, and cards/counts persist separately from daily locks or squad scores. Disk failure or interruption between writes can lose acknowledged progress or leave orphaned cards. **Fix:** commit find metadata atomically in a SQLite transaction and propagate persistence failures.
+
+7. **P2 — Squad results omit promised features and mishandle ties.** [app/src/screens/Squad.tsx:318](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/screens/Squad.tsx:318). The screen omits each player’s best card and round winners despite server support. Equal totals—including everyone scoring zero—declare the first player the winner. **Fix:** render the supplied summaries and explicitly handle tied scores and no-find games.

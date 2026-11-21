@@ -99,7 +99,7 @@ export function CardView({ card }: { card: Card }) {
             <H size={30}>+{card.points}</H>
           </View>
           <T style={{ fontFamily: F.bodyBold, fontSize: 17 }}>
-            {card.totalCount <= 1 ? 'The first find for this prompt' : card.sameCount <= 1 ? `Nobody else found this, out of ${card.totalCount} finds` : `${card.sameCount} of ${card.totalCount} finds were the same`}
+            {card.sameCount <= 1 ? `Nobody else has found this · ${card.totalCount} ${card.totalCount === 1 ? 'find' : 'finds'} for this prompt` : `${card.sameCount} of ${card.totalCount} finds were the same`}
           </T>
           <Mono>
             {when} · {card.mode === 'daily' ? 'Daily' : 'Squad'}

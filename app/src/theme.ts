@@ -9,9 +9,9 @@ export const C = {
   card: '#FAFBF7',
   ink: '#12150F',
   inkSoft: '#454B41',
-  faint: '#7D8577',
+  faint: '#636B5E',
   line: '#C3C9BC',
-  blaze: '#F2542D', // trail-marker orange: timers, primary highlights
+  blaze: '#D23C15', // trail-marker orange: primary actions and timers (white text passes AA on it)
   white: '#FFFFFF',
   scrim: 'rgba(18,21,15,0.55)',
 };

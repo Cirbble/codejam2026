@@ -45,7 +45,7 @@ export default function Home() {
   const { daily, failed, reload } = useDaily();
   const { width } = useWindowDimensions();
   const fanW = Math.min(width, 520) - 40;
-  const cw = Math.min(138, fanW * 0.31);
+  const cw = Math.min(156, fanW * 0.34);
   const found = daily ? daily.prompts.filter((p) => daily.cards[p.id]).length : 0;
   const total = daily?.prompts.length ?? 5;
   const done = daily != null && found === total;
@@ -134,7 +134,7 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  stage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  stage: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 26 },
   next: { flexDirection: 'row', alignItems: 'center', gap: 16, padding: 20, borderRadius: 22, backgroundColor: C.ink, transform: [{ rotate: '-1deg' }], boxShadow: `0px 5px 0px ${C.blaze}` },
   shoot: { width: 60, height: 60, borderRadius: 30, backgroundColor: C.blaze, borderWidth: 2, borderColor: C.paper, alignItems: 'center', justifyContent: 'center' },
 });

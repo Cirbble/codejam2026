@@ -42,6 +42,7 @@ export function GameCard({ card, width, onPress, style, live = true, flat }: { c
   const h = width * RATIO;
   const s = width / 300;
   const compact = width < 150;
+  const thumb = !compact && width < 220; // grids: photo, name and tier only
   const r = 20 * s + 2;
   const shiny = card.tier === 'rare' || card.tier === 'epic' || card.tier === 'one';
   const frame = (
@@ -63,7 +64,7 @@ export function GameCard({ card, width, onPress, style, live = true, flat }: { c
     >
       {frame}
       <View style={[styles.inner, { borderRadius: Math.max(6, 12 * s) }]}>
-        {!compact && (
+        {!compact && !thumb && (
           <View style={[styles.head, { paddingHorizontal: 12 * s, height: 34 * s }]}>
             <Text numberOfLines={1} style={{ flex: 1, fontFamily: F.bodyBold, fontSize: 11 * s + 1, letterSpacing: 1, textTransform: 'uppercase', color: C.inkSoft }}>
               {card.promptText}
@@ -84,16 +85,17 @@ export function GameCard({ card, width, onPress, style, live = true, flat }: { c
           </View>
         ) : (
           <View style={{ paddingHorizontal: 12 * s, paddingTop: 10 * s, paddingBottom: 12 * s, gap: 8 * s }}>
-            <Text numberOfLines={2} style={{ fontFamily: F.display, fontSize: 26 * s + 2, lineHeight: (26 * s + 2) * 1.05, color: C.ink, letterSpacing: -0.5 }}>
+            <Text numberOfLines={2} style={{ fontFamily: F.display, fontSize: thumb ? 17 : 26 * s + 2, lineHeight: (thumb ? 17 : 26 * s + 2) * 1.05, color: C.ink, letterSpacing: -0.5 }}>
               {card.title}
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <View style={[styles.chip, { backgroundColor: t.color, paddingHorizontal: 10 * s, height: 24 * s + 4 }]}>
-                <Text style={{ fontFamily: F.bodyBold, fontSize: 12 * s + 1, color: C.white, letterSpacing: 0.6 }}>{t.name.toUpperCase()}</Text>
+              <View style={[styles.chip, { backgroundColor: t.color, paddingHorizontal: 10 * s, height: 24 * s + 4 }, thumb && { paddingHorizontal: 9, height: 22 }]}>
+                <Text style={{ fontFamily: F.bodyBold, fontSize: thumb ? 11 : 12 * s + 1, color: C.white, letterSpacing: 0.6 }}>{t.name.toUpperCase()}</Text>
               </View>
-              <Text style={{ fontFamily: F.mono, fontSize: 12 * s + 1, color: C.inkSoft }}>
-                {card.totalCount <= 1 ? 'First find' : `${card.sameCount} of ${card.totalCount} finds`}
-              </Text>
+              {!thumb && <Text style={{ fontFamily: F.mono, fontSize: 12 * s + 1, color: C.inkSoft }}>
+                {card.sameCount <= 1 ? 'Only find' : `${card.sameCount} of ${card.totalCount} finds`}
+              </Text>}
+              {thumb && <Text style={{ fontFamily: F.display, fontSize: 16, color: C.ink }}>{card.points}</Text>}
             </View>
           </View>
         )}

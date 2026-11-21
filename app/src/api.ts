@@ -51,6 +51,9 @@ export type RoomView = {
   players: { id: string; name: string; score: number; connected: boolean; found: boolean }[];
   reveal: Card[] | null;
   rounds: { prompt: Prompt; cards: Card[] }[];
+  best?: Record<string, string>;
+  roundWinners?: (string | null)[];
+  winners?: string[];
 };
 
 export const MAX_TRIES = 6;
