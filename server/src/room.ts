@@ -4,7 +4,11 @@ import type { Card, Phase, Prompt, PromptDef, RejectReason, Reply, RoomView } fr
 export const COUNTDOWN_MS = 3_000;
 export const HUNT_MS = 180_000;
 export const QUICK_HUNT_MS = 60_000;
-export const REVEAL_MS = 8_000;
+/** Reveal: 6 s plus 3 s per card, capped at 20 s. */
+export const REVEAL_BASE_MS = 6_000;
+export const REVEAL_PER_CARD_MS = 3_000;
+export const REVEAL_MAX_MS = 20_000;
+export const revealMsFor = (cards: number) => Math.min(REVEAL_MAX_MS, REVEAL_BASE_MS + REVEAL_PER_CARD_MS * cards);
 export const TOTAL_ROUNDS = 5;
 export const MAX_PLAYERS = 12;
 export const MAX_TRIES = 6;
@@ -51,6 +55,8 @@ export class Room {
   prompts: PromptDef[] = [];
   endsAt: number | null = null;
   huntEndedAt: number | null = null;
+  /** length of the current reveal (grows when a late card joins) */
+  revealMs: number | null = null;
   players = new Map<string, Player>();
   /** current round: playerId -> locked card */
   found = new Map<string, Card>();
@@ -239,9 +245,15 @@ export class Room {
   private toReveal() {
     this.phase = 'reveal';
     this.huntEndedAt = this.now();
-    this.endsAt = this.now() + REVEAL_MS;
+    this.revealMs = revealMsFor(this.found.size);
+    this.endsAt = this.now() + this.revealMs;
     this.rounds.push({ prompt: this.prompts[this.round - 1], cards: [] });
     this.syncRoundCards();
+    // the round's points land at the reveal, so totals during the hunt never hint at anyone's tier
+    for (const [pid, c] of this.found) {
+      const p = this.players.get(pid);
+      if (p) p.score += c.points;
+    }
     this.touch();
   }
 
@@ -285,6 +297,23 @@ export class Room {
     return { kind: 'ok', round: this.round, prompt: this.prompts[this.round - 1], receivedAt };
   }
 
+  /** Take back an accepted find whose save failed after settle(): the same submission can be sent again. */
+  unsettle(playerId: string, submissionId: string, card: Card) {
+    const key = `${playerId}:${submissionId}`;
+    if (this.found.get(playerId)?.id !== card.id) return;
+    this.replies.delete(key);
+    this.found.delete(playerId);
+    this.tries.set(playerId, Math.max(0, (this.tries.get(playerId) ?? 1) - 1));
+    const p = this.players.get(playerId);
+    if (p && this.phase !== 'hunting') p.score = Math.max(0, p.score - card.points); // points were applied at the reveal
+    if (this.phase === 'reveal') this.syncRoundCards();
+    this.touch();
+  }
+
+  triesLeft(playerId: string) {
+    return Math.max(0, MAX_TRIES - (this.tries.get(playerId) ?? 0));
+  }
+
   /** AI unavailable: no try used, nothing stored. */
   abort(playerId: string, submissionId: string) {
     if (this.pending.get(playerId)?.submissionId === submissionId) this.pending.delete(playerId);
@@ -311,13 +340,20 @@ export class Room {
     this.tries.set(playerId, tries);
     if (!outcome.accepted) return save({ status: 200, body: { accepted: false, reason: outcome.reason, verdict: outcome.verdict, triesLeft: Math.max(0, MAX_TRIES - tries) } });
     if (this.found.has(playerId)) return save(err(409, 'locked', 'You already locked a find this round.'));
-    const card = mint();
+    let card: Card;
+    try {
+      card = mint();
+    } catch (e) {
+      this.tries.set(playerId, tries - 1); // not saved: the same submission can be sent again
+      throw e;
+    }
     this.found.set(playerId, card);
-    p.score += card.points;
+    if (this.phase === 'reveal') p.score += card.points; // a late card after the reveal started
     const reply = save({ status: 200, body: { accepted: true, card } });
     if (this.phase === 'reveal') {
       this.syncRoundCards();
-      this.endsAt = Math.max(this.endsAt ?? 0, this.now() + LATE_SHOW_MS);
+      this.revealMs = revealMsFor(this.found.size);
+      this.endsAt = Math.max(this.endsAt ?? 0, (this.huntEndedAt ?? this.now()) + this.revealMs, this.now() + LATE_SHOW_MS);
     } else this.checkEarlyEnd();
     return reply;
   }
@@ -335,6 +371,7 @@ export class Room {
       totalRounds: TOTAL_ROUNDS,
       prompt: publicPrompt(this.prompt),
       endsAt: this.endsAt,
+      revealMs: this.phase === 'reveal' ? this.revealMs : null,
       players: [...this.players.values()]
         .sort((a, b) => a.joinedAt - b.joinedAt)
         .map((p) => ({ id: p.id, name: p.name, score: p.score, connected: p.connected, found: this.phase !== 'lobby' && this.phase !== 'ended' && this.found.has(p.id) })),
@@ -351,7 +388,7 @@ export class Room {
       for (const c of r.cards) {
         if (!c.playerId) continue;
         const b = best[c.playerId];
-        if (!b || c.rarity > b.rarity || (c.rarity === b.rarity && c.points > b.points)) best[c.playerId] = c;
+        if (!b || rank(c, b) < 0) best[c.playerId] = c;
       }
     return {
       best: Object.fromEntries(Object.entries(best).map(([pid, c]) => [pid, c.id])),
@@ -389,6 +426,7 @@ export class Room {
       prompts: this.prompts,
       endsAt: this.endsAt,
       huntEndedAt: this.huntEndedAt,
+      revealMs: this.revealMs,
       players: [...this.players.values()],
       found: [...this.found],
       tries: [...this.tries],
@@ -410,6 +448,7 @@ export class Room {
     r.prompts = s.prompts;
     r.endsAt = s.endsAt == null ? null : s.endsAt + down;
     r.huntEndedAt = s.huntEndedAt == null ? null : s.huntEndedAt + down;
+    r.revealMs = s.revealMs ?? null;
     for (const p of s.players) r.players.set(p.id, { ...p, connected: false, awaySince: now() });
     r.found = new Map(s.found);
     r.tries = new Map(s.tries);
@@ -423,7 +462,12 @@ export class Room {
 }
 
 export function sortCards(cards: Card[]): Card[] {
-  return [...cards].sort((a, b) => b.rarity - a.rarity || b.points - a.points || a.at - b.at);
+  return [...cards].sort(rank);
+}
+
+/** Points first (a 100-point One of One beats an 85-point Epic), then rarity, then the earlier find. */
+export function rank(a: Card, b: Card): number {
+  return b.points - a.points || b.rarity - a.rarity || a.at - b.at;
 }
 
 function withSameAs(cards: Card[]): Card[] {

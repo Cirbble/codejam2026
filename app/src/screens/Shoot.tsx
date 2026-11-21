@@ -4,9 +4,9 @@ import { Image } from 'expo-image';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
-import { Linking, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { AppState, Linking, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { cap, Card, newSubmissionId, submitFind } from '../api';
+import { cap, Card, newSubmissionId, rarityLine, submitFind } from '../api';
 import { FlipReveal, Pending } from '../components/Reveal';
 import { Button, H, IconButton, Label, Mono, Screen, T, tap } from '../components/ui';
 import { useNav } from '../nav';
@@ -27,12 +27,25 @@ async function toJpeg(uri: string) {
   return { uri: out.uri, b64: out.base64 ?? '' };
 }
 
+function Checking() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 10_000);
+    return () => clearTimeout(t);
+  }, []);
+  return <Mono>{slow ? 'Still checking. Slow connection' : 'Checking your find'}</Mono>;
+}
+
 export default function Shoot({ promptId, promptText, examples, mode }: { promptId: string; promptText: string; examples?: string; mode: 'daily' | 'squad' }) {
   const nav = useNav();
   const squad = useSquad();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const [perm, requestPerm] = useCameraPermissions();
+  const [perm, requestPerm, getPerm] = useCameraPermissions();
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => st === 'active' && getPerm());
+    return () => sub.remove();
+  }, [getPerm]);
   const cam = useRef<CameraView>(null);
   const [ready, setReady] = useState(false);
   const [phase, setPhase] = useState<Phase>({ k: 'aim' });
@@ -52,7 +65,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
     const closed = roomPhase !== 'hunting' || roomRound !== startRound.current;
     if (!closed) return;
     if (phase.k === 'judging') return; // the verdict is still on its way
-    const t = setTimeout(() => nav.back(), phase.k === 'won' ? 2200 : 0);
+    const t = setTimeout(() => nav.back(), phase.k === 'won' ? 2200 : phase.k === 'aim' ? 0 : 2500);
     return () => clearTimeout(t);
   }, [mode, roomPhase, roomRound, phase.k, nav]);
 
@@ -77,7 +90,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
     setReady(false);
     tap('medium');
     try {
-      const pic = await cam.current.takePictureAsync({ quality: 0.8, skipProcessing: Platform.OS === 'android' });
+      const pic = await cam.current.takePictureAsync({ quality: 0.6, shutterSound: false });
       if (!pic?.uri) throw new Error('no photo');
       const { uri, b64 } = await toJpeg(pic.uri);
       judge(uri, b64);
@@ -119,14 +132,14 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
           {phase.k === 'judging' && (
             <>
               <Pending width={cardW} />
-              <Mono>Checking your find</Mono>
+              <Checking />
             </>
           )}
           {phase.k === 'won' && (
             <>
               <FlipReveal card={phase.card} width={cardW} />
               <T style={{ textAlign: 'center', fontFamily: F.bodyBold, color: C.ink }}>
-                {phase.card.sameCount <= 1 ? 'Nobody else has found this' : `${phase.card.sameCount} of ${phase.card.totalCount} finds were the same`}
+                {rarityLine(phase.card)}
               </T>
             </>
           )}
@@ -143,7 +156,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
                   {phase.k === 'error' ? 'Not judged yet' : phase.screen ? 'Find the real thing' : 'Not a match'}
                 </H>
                 <T style={{ textAlign: 'center', fontSize: 17, color: C.ink }}>{phase.k === 'nope' ? phase.verdict : phase.message}</T>
-                {phase.k === 'nope' && phase.triesLeft != null && <T style={{ fontFamily: F.bodyBold, color: C.blaze }}>{phase.triesLeft} {phase.triesLeft === 1 ? 'try' : 'tries'} left today</T>}
+                {phase.k === 'nope' && phase.triesLeft != null && <T style={{ fontFamily: F.bodyBold, color: C.blaze }}>{phase.triesLeft} {phase.triesLeft === 1 ? 'try' : 'tries'} left {mode === 'squad' ? 'this round' : 'today'}</T>}
               </View>
             </>
           )}
@@ -152,7 +165,11 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
           {phase.k === 'won' && <Button title={mode === 'squad' ? 'Back to the round' : 'Done'} onPress={close} />}
           {phase.k === 'nope' && (phase.triesLeft == null || phase.triesLeft > 0) && <Button title="Try again" icon="camera" onPress={() => setPhase({ k: 'aim' })} />}
           {phase.k === 'error' && (phase.retry ? <Button title="Send again" icon="refresh-cw" onPress={phase.retry} /> : <Button title="Try again" icon="camera" onPress={() => setPhase({ k: 'aim' })} />)}
-          {phase.k !== 'won' && phase.k !== 'judging' && <Button title="Back" kind="quiet" onPress={close} />}
+          {phase.k === 'nope' && phase.triesLeft === 0 ? (
+            <Button title={mode === 'squad' ? 'Back to the round' : 'Back to today'} onPress={close} />
+          ) : (
+            phase.k !== 'won' && phase.k !== 'judging' && <Button title="Back" kind="quiet" onPress={close} />
+          )}
         </View>
       </Screen>
     );
@@ -203,10 +220,10 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
       {(!perm || denied) && (
         <View style={styles.center}>
           <Feather name="camera-off" size={40} color={C.paper} />
-          <T style={{ color: C.paper, textAlign: 'center', fontFamily: F.bodyBold }}>{!perm ? 'Opening the camera' : 'Rarefind needs the camera to see your finds.'}</T>
+          <T style={{ color: C.paper, textAlign: 'center', fontFamily: F.bodyBold }}>{!perm ? 'Opening the camera' : Platform.OS === 'web' ? 'Allow the camera for this site in your browser, then reload.' : 'Rarefind needs the camera to see your finds.'}</T>
           {denied && (
             <Button
-              title={perm?.canAskAgain ? 'Allow camera' : 'Open settings'}
+              title={Platform.OS === 'web' ? 'Ask again' : perm?.canAskAgain ? 'Allow camera' : 'Open settings'}
               kind="blaze"
               onPress={() => (perm?.canAskAgain ? requestPerm() : Linking.openSettings())}
               style={{ alignSelf: 'stretch' }}

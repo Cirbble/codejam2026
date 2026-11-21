@@ -9,7 +9,7 @@ export const C = {
   card: '#FAFBF7',
   ink: '#12150F',
   inkSoft: '#454B41',
-  faint: '#636B5E',
+  faint: '#575F52',
   line: '#C3C9BC',
   blaze: '#D23C15', // trail-marker orange: primary actions and timers (white text passes AA on it)
   white: '#FFFFFF',
@@ -27,12 +27,12 @@ export const F = {
 
 export type Tier = 'common' | 'uncommon' | 'rare' | 'epic' | 'one';
 
-export const TIERS: Record<Tier, { name: string; color: string; frame: string; ink: string; rank: number }> = {
-  common: { name: 'Common', color: '#7F877A', frame: '#D3D8CD', ink: '#12150F', rank: 0 },
-  uncommon: { name: 'Uncommon', color: '#23914A', frame: '#BFE3C8', ink: '#0E3B1E', rank: 1 },
-  rare: { name: 'Rare', color: '#2563EB', frame: '#BCD0FA', ink: '#0F2A66', rank: 2 },
-  epic: { name: 'Epic', color: '#8B35E0', frame: '#DCC4F7', ink: '#3A1466', rank: 3 },
-  one: { name: 'One of One', color: '#E0457B', frame: '#F7C9D9', ink: '#5C1230', rank: 4 },
+export const TIERS: Record<Tier, { name: string; color: string; frame: string; ink: string; text: string; rank: number }> = {
+  common: { name: 'Common', color: '#5F675A', frame: '#D3D8CD', ink: '#12150F', text: '#454B41', rank: 0 },
+  uncommon: { name: 'Uncommon', color: '#23914A', frame: '#BFE3C8', ink: '#0E3B1E', text: '#17703A', rank: 1 },
+  rare: { name: 'Rare', color: '#2563EB', frame: '#BCD0FA', ink: '#0F2A66', text: '#1D4FC4', rank: 2 },
+  epic: { name: 'Epic', color: '#8B35E0', frame: '#DCC4F7', ink: '#3A1466', text: '#6F25BA', rank: 3 },
+  one: { name: 'One of One', color: '#E0457B', frame: '#F7C9D9', ink: '#5C1230', text: '#B8295E', rank: 4 },
 };
 
 // holographic stops for One of One frames and the foil sheen

@@ -42,6 +42,8 @@ export type RoomView = {
   totalRounds: number;
   prompt: Prompt | null;
   endsAt: number | null;
+  /** reveal only: this reveal's length in ms (6 s + 3 s per card, max 20 s); null otherwise */
+  revealMs: number | null;
   players: { id: string; name: string; score: number; connected: boolean; found: boolean }[];
   reveal: Card[] | null;
   rounds: { prompt: Prompt; cards: Card[] }[];
@@ -73,11 +75,12 @@ export type ClientMsg =
   | { t: 'skip' }
   | { t: 'again' }
   | { t: 'kick'; id: string }
-  | { t: 'leave' };
+  | { t: 'leave'; code?: string; playerId?: string; secret?: string };
 
 export type WsErrorCode = 'no_room' | 'full' | 'in_progress' | 'kicked' | 'rate' | 'other';
 
 export type ServerMsg =
   | { t: 'welcome'; playerId: string; secret: string; code: string }
+  | { t: 'left' }
   | { t: 'state'; room: RoomView }
   | { t: 'error'; code: WsErrorCode; message: string };

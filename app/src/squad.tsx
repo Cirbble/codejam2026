@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState } from 'react-native';
-import { getDevice, RoomView, SERVER } from './api';
+import { AppState, Linking, Platform } from 'react-native';
+import { getDevice, joinCodeFrom, RoomView, SERVER } from './api';
+import { cap } from './api';
+import { clearReminders, initNotifications, remindRound } from './notify';
 
 type Session = { code: string; playerId: string; secret: string };
 type Squad = {
@@ -15,11 +17,27 @@ type Squad = {
   send: (m: Record<string, unknown>) => void;
   leave: () => void;
   clearError: () => void;
+  pendingJoin: string | null;
 };
 const Ctx = createContext<Squad>(null as unknown as Squad);
 export const useSquad = () => useContext(Ctx);
 
 const KEY = 'rarefind.squad';
+const LEAVE_KEY = 'rarefind.pendingLeave';
+
+/** Send an authenticated leave on its own socket; forget it only once the server confirms. */
+function retryLeave(s: Session) {
+  const sock = new WebSocket(wsUrl);
+  sock.onopen = () => sock.send(JSON.stringify({ t: 'leave', ...s }));
+  sock.onmessage = (e) => {
+    const d = String(e.data);
+    if (d.includes('"left"') || d.includes('no_room')) {
+      AsyncStorage.removeItem(LEAVE_KEY).catch(() => {});
+      sock.close();
+    }
+  };
+  setTimeout(() => sock.close(), 10_000);
+}
 const wsUrl = SERVER.replace(/^http/, 'ws') + '/rt';
 
 export function SquadProvider({ children }: { children: React.ReactNode }) {
@@ -28,6 +46,14 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skew, setSkew] = useState(0);
+  // a squad code from an invite link, used to prefill Join
+  const [pendingJoin, setPendingJoin] = useState<string | null>(() => (Platform.OS === 'web' ? joinCodeFrom((globalThis as any).location?.search) : null));
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    Linking.getInitialURL().then((u) => u && setPendingJoin(joinCodeFrom(u))).catch(() => {});
+    const sub = Linking.addEventListener('url', (e) => setPendingJoin(joinCodeFrom(e.url)));
+    return () => sub.remove();
+  }, []);
   const ws = useRef<WebSocket | null>(null);
   const pending = useRef<Record<string, unknown> | null>(null); // first message to send on open
   const sessionRef = useRef<Session | null>(null);
@@ -37,6 +63,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastMsg = useRef(0);
+  const openedAt = useRef(0);
 
 
   const open = useCallback(() => {
@@ -44,6 +71,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
     ws.current?.close();
     const sock = new WebSocket(wsUrl);
     ws.current = sock;
+    openedAt.current = Date.now();
     sock.onopen = () => {
       if (ws.current !== sock) return;
       attempts.current = 0;
@@ -76,6 +104,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
       } else if (m.t === 'error') {
         setError(m.message || 'Something went wrong');
         if (m.code === 'no_room' || m.code === 'kicked' || m.code === 'full' || m.code === 'in_progress') {
+          clearReminders();
           want.current = false;
           sessionRef.current = null;
           setSession(null);
@@ -98,13 +127,37 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const id = setInterval(() => {
       if (!want.current || !sessionRef.current) return;
-      if (ws.current?.readyState === WebSocket.OPEN && Date.now() - lastMsg.current > 12_000) {
+      const st = ws.current?.readyState;
+      const stalled = st === WebSocket.CONNECTING && Date.now() - openedAt.current > 8_000;
+      if ((st === WebSocket.OPEN && Date.now() - lastMsg.current > 12_000) || stalled) {
         setConnected(false);
         open();
       }
     }, 3000);
     return () => clearInterval(id);
   }, [open]);
+
+  // finish any leave the server hasn't confirmed: on launch and whenever the app comes back
+  useEffect(() => {
+    const flush = () =>
+      AsyncStorage.getItem(LEAVE_KEY)
+        .then((raw) => raw && retryLeave(JSON.parse(raw) as Session))
+        .catch(() => {});
+    flush();
+    const sub = AppState.addEventListener('change', (st) => st === 'active' && flush());
+    return () => sub.remove();
+  }, []);
+
+  // lock-screen reminders follow the room's real deadlines
+  const me = session?.playerId;
+  const foundMe = !!room?.players.find((p) => p.id === me)?.found;
+  useEffect(() => {
+    if (!room) return;
+    if (room.phase === 'hunting' && room.endsAt != null) {
+      const revealMs = room.revealMs ?? Math.min(20_000, 6_000 + 3_000 * room.players.length);
+      remindRound(`${room.code}:${room.round}:${room.endsAt}`, room.endsAt + skew, cap(room.prompt?.text), room.round, room.totalRounds, foundMe, revealMs);
+    } else if (room.phase === 'ended' || room.phase === 'lobby') clearReminders();
+  }, [room?.phase, room?.endsAt, room?.round, room?.code, foundMe, skew]);
 
   // resume a saved squad on launch
   useEffect(() => {
@@ -115,6 +168,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
         sessionRef.current = s;
         setSession(s);
         want.current = true;
+        initNotifications().catch(() => {});
         open();
       })
       .catch(() => {});
@@ -134,6 +188,7 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
       sessionRef.current = null;
       setSession(null);
       setRoom(null);
+      initNotifications().catch(() => {}); // ask for notifications when a squad starts, not at first launch
       pending.current = { ...first, device: await getDevice(), op: Date.now().toString(36) + Math.random().toString(36).slice(2) }; // op makes a retried create/join idempotent
       want.current = true;
       open();
@@ -154,7 +209,12 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const leave = useCallback(() => {
-    send({ t: 'leave' });
+    clearReminders();
+    const s = sessionRef.current;
+    if (s) {
+      AsyncStorage.setItem(LEAVE_KEY, JSON.stringify(s)).catch(() => {}); // kept until the server confirms
+      retryLeave(s);
+    }
     want.current = false;
     sessionRef.current = null;
     setSession(null);
@@ -175,8 +235,9 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
       send,
       leave,
       clearError: () => setError(null),
+      pendingJoin,
     }),
-    [room, session, connected, error, skew, start, send, leave],
+    [room, session, connected, error, skew, start, send, leave, pendingJoin],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

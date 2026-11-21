@@ -58,11 +58,24 @@ async function waitFor(c: Client, pred: (room: any) => boolean, ms = 20_000) {
   }
   return false;
 }
+/** Send one message on a fresh socket and return the first reply. */
+function once(msg: object): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(WS_URL);
+    ws.on('open', () => ws.send(JSON.stringify(msg)));
+    ws.on('message', (d) => {
+      resolve(JSON.parse(String(d)));
+      ws.close();
+    });
+    ws.on('error', reject);
+  });
+}
 const squadFind = (c: Client, image: string, submissionId = hex(8)) =>
   api('/api/find', { device: c.device, promptId: c.room.prompt.id, image, submissionId, mode: 'squad', code: c.code, playerId: c.id, secret: c.secret });
 
 // ---------------- basics ----------------
 check((await api('/health')).json?.ok === true, 'health');
+check((await fetch(BASE + '/api/stats')).status === 404 && (await fetch(BASE + '/api/stats?token=nope')).status === 404, 'stats hidden without the token');
 for (const f of ['red_fire_hydrant.jpg', 'laptop_screen.jpg']) if (!existsSync(join(IMG, f))) throw new Error(`missing ${f} in ${IMG}`);
 const hydrant = photo('red_fire_hydrant.jpg');
 const laptop = photo('laptop_screen.jpg');
@@ -115,6 +128,7 @@ check(fa.json?.accepted === true && cardA?.label && cardA?.photo?.startsWith('/p
 const again = await squadFind(a, hydrant, subA);
 check(JSON.stringify(again.json) === JSON.stringify(fa.json), 'same submissionId returns the same reply');
 check(a.room.phase === 'hunting' && a.room.players.find((p: any) => p.id === a.id)?.found === true && a.room.reveal === null, 'others only see "found" while hunting');
+check(a.room.players.every((p: any) => p.score === 0), 'scores stay hidden until the reveal');
 const img = await fetch(BASE + cardA.photo);
 check(img.status === 200 && img.headers.get('content-type') === 'image/jpeg', 'card photo served');
 
@@ -125,7 +139,7 @@ check(await waitFor(a, (r) => r.phase === 'reveal', 3000), 'everyone found -> ea
 const rev = a.room.reveal ?? [];
 check(rev.length === 2 && rev[0].rarity >= rev[1].rarity, 'reveal has both cards, rarest first');
 check(rev.every((c: any) => Array.isArray(c.sameAs) && c.sameAs.length === 1), `"same as" tags: ${rev.map((c: any) => `${c.playerName}~${c.sameAs}`).join(', ')}`);
-check(a.room.endsAt - a.room.now > 6000 && a.room.endsAt - a.room.now <= 8000, 'reveal lasts 8 s');
+check(a.room.revealMs === 12000 && a.room.endsAt - a.room.now > 10000 && a.room.endsAt - a.room.now <= 12000, `reveal is 6 s + 3 s per card (revealMs ${a.room.revealMs})`);
 const top = await api('/api/prompt/i-red/top');
 check(top.json?.total >= 1 && top.json.top.some((x: any) => x.label === cardA.label), `prompt top: ${JSON.stringify(top.json?.top?.slice(0, 3))}`);
 
@@ -152,14 +166,34 @@ check(a.room.phase === 'ended', 'non-host cannot restart');
 sendWs(a, { t: 'again' });
 check(await waitFor(a, (x) => x.phase === 'lobby' && x.players.length === 2), 'again -> lobby with the same players');
 {
+  // second game opens with "something red" again: the same photo from the same device is refused
+  sendWs(a, { t: 'start' });
+  check(await waitFor(a, (r) => r.phase === 'hunting' && r.prompt?.id === 'i-red', 8000), 'second game hunting');
+  await sleep(1500);
+  const replay = await squadFind(a, hydrant);
+  check(replay.json?.accepted === false && replay.json.reason === 'unclear' && /already used this photo/i.test(replay.json.verdict), `replayed photo refused: ${JSON.stringify(replay.json)}`);
+  const orig = await squadFind(a, hydrant, subA);
+  check(JSON.stringify(orig.json) === JSON.stringify(fa.json), 'the original submissionId still returns the original result');
+  while (a.room.phase !== 'ended') {
+    sendWs(a, { t: 'skip' });
+    await sleep(150);
+  }
+  sendWs(a, { t: 'again' });
+  check(await waitFor(a, (x) => x.phase === 'lobby'), 'back to the lobby');
+}
+{
   const before = a.states.length;
   await sleep(4600);
   check(a.states.length > before, `idle lobby still gets a state heartbeat (${a.states.length - before} in 4.6 s)`);
 }
 const coll = await api(`/api/collection?device=${a.device}`);
 check(coll.json?.cards?.[0]?.id === cardA.id, 'squad card is in the collection');
-sendWs(b, { t: 'leave' });
+b.ws.close();
+const left = await once({ t: 'leave', code: a.code, playerId: b.id, secret: b.secret });
+check(left?.t === 'left', 'leave with credentials on a fresh socket -> left');
 check(await waitFor(a, (x) => x.players.length === 1), 'leave removes the player');
+const left2 = await once({ t: 'leave', code: a.code, playerId: b.id, secret: b.secret });
+check(left2?.t === 'left', 'repeating the leave is idempotent');
 a.ws.close();
 b.ws.close();
 

@@ -60,15 +60,14 @@ export default function DailyScreen() {
                   <H size={22}>{cap(p.text)}</H>
                   {card ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <T style={{ fontFamily: F.bodyBold, color: TIERS[card.tier].color }}>{TIERS[card.tier].name}</T>
-                      <Mono>
-                        {card.title} · {card.points} pts
-                      </Mono>
+                      <T style={{ fontFamily: F.bodyBold, color: TIERS[card.tier].text }}>{TIERS[card.tier].name}</T>
+                      <Mono style={{ color: C.ink }}>{card.title}</Mono>
+                      <Mono style={{ color: C.ink }}>{card.points} pts</Mono>
                     </View>
                   ) : out ? (
                     <Mono style={{ color: C.faint }}>No tries left today</Mono>
                   ) : used > 0 ? (
-                    <Mono style={{ color: C.blaze }}>{left} tries left</Mono>
+                    <T style={{ color: C.blaze, fontFamily: F.bodyBold, fontSize: 15 }}>{left} {left === 1 ? 'try' : 'tries'} left</T>
                   ) : null}
                 </View>
                 {card && <Feather name="chevron-right" size={22} color={C.faint} />}

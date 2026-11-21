@@ -2,11 +2,11 @@ import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { cap, type Card, type RoomView } from '../api';
+import { cap, inviteLink, type Card, type RoomView } from '../api';
+import { shareText } from '../share';
 import { EmptySlot, GameCard, Sparkle } from '../components/GameCard';
 import { Bar, Button, H, IconButton, Label, Mono, Screen, T, tap } from '../components/ui';
 import { useNav } from '../nav';
-import { clearReminders, remindRound } from '../notify';
 import { useSquad } from '../squad';
 import { C, F, TIERS } from '../theme';
 
@@ -72,7 +72,7 @@ function Start() {
   const nav = useNav();
   const squad = useSquad();
   const [name, setName] = useState('');
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(squad.pendingJoin ?? '');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     AsyncStorage.getItem('rarefind.name').then((n) => n && setName(n)).catch(() => {});
@@ -88,7 +88,7 @@ function Start() {
   };
   return (
     <Screen>
-      <Bar onBack={nav.back} title="Play with friends" />
+      <Bar onBack={nav.back} title="Squad" />
       <ScrollView contentContainerStyle={{ gap: 28, paddingTop: 12 }} keyboardShouldPersistTaps="handled">
         <View style={{ gap: 8 }}>
           <Label>Your name</Label>
@@ -134,6 +134,7 @@ function Start() {
 
 function Lobby({ room }: { room: RoomView }) {
   const nav = useNav();
+  const [copied, setCopied] = useState(false);
   const squad = useSquad();
   const me = squad.session!.playerId;
   const host = room.hostId === me;
@@ -149,7 +150,7 @@ function Lobby({ room }: { room: RoomView }) {
             </View>
           ))}
         </View>
-        <Button title="Invite friends" icon="share-2" kind="line" onPress={() => Share.share({ message: `Join my Rarefind squad: ${room.code}` })} style={{ height: 48, marginTop: 10 }} />
+        <Button title={copied ? 'Link copied' : 'Invite friends'} icon="share-2" kind="line" onPress={async () => (await shareText(`Join my Rarefind squad: ${inviteLink(room.code)} (code ${room.code})`)) === 'copied' && setCopied(true)} style={{ height: 48, marginTop: 10 }} />
       </View>
       <ScrollView style={{ flex: 1, marginTop: 24 }} contentContainerStyle={{ gap: 10 }}>
         <Label>{room.players.length} in the squad</Label>
@@ -200,12 +201,6 @@ function Hunt({ room }: { room: RoomView }) {
   const span = (room.quick ? 60 : 180) * 1000;
   const urgent = left < 20_000;
   const host = room.hostId === me;
-  const endsLocal = room.endsAt != null ? room.endsAt + squad.skew : null;
-  useEffect(() => {
-    if (room.phase !== 'hunting' || endsLocal == null) return;
-    if (mine?.found) clearReminders();
-    else remindRound(`${room.code}:${room.round}`, endsLocal, cap(room.prompt?.text));
-  }, [room.phase, room.code, room.round, endsLocal, mine?.found, room.prompt?.text]);
 
   if (room.phase === 'countdown') {
     return (
@@ -223,12 +218,10 @@ function Hunt({ room }: { room: RoomView }) {
   }
   return (
     <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Label>
-          Round {room.round} of {room.totalRounds}
-        </Label>
-        <Text style={{ fontFamily: F.mono, fontSize: 22, color: urgent ? C.blaze : C.ink, fontVariant: ['tabular-nums'] }}>{clock(left)}</Text>
-      </View>
+      <Label style={{ textAlign: 'center' }}>
+        Round {room.round} of {room.totalRounds}
+      </Label>
+      <Text style={{ fontFamily: F.display, fontSize: 64, lineHeight: 70, textAlign: 'center', color: urgent ? C.blaze : C.ink, fontVariant: ['tabular-nums'] }}>{clock(left)}</Text>
       <View style={styles.track}>
         <View style={{ width: `${Math.max(0, Math.min(1, left / span)) * 100}%`, height: '100%', backgroundColor: urgent ? C.blaze : C.ink, borderRadius: 999 }} />
       </View>
@@ -240,14 +233,17 @@ function Hunt({ room }: { room: RoomView }) {
           </H>
           {room.prompt?.examples && <T style={{ color: '#A9B1A2' }}>Like {room.prompt.examples}</T>}
         </View>
-      </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+        <T style={{ fontFamily: F.bodyBold, textAlign: 'center', marginTop: 22 }}>
+          {room.players.filter((p) => p.found).length} of {room.players.length} found
+        </T>
+      {room.players.length > 1 && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, justifyContent: 'center' }}>
         {room.players.map((p) => (
           <View key={p.id} style={[styles.pchip, p.found && { backgroundColor: C.ink }]}>
             {p.found && <Feather name="check" size={14} color={C.white} />}
             <Text style={{ fontFamily: F.bodyBold, fontSize: 14, color: p.found ? C.white : C.ink }}>{p.id === me ? 'You' : p.name}</Text>
           </View>
         ))}
+      </View>}
       </View>
       <View style={{ gap: 12 }}>
         {mine?.found ? (
@@ -308,7 +304,7 @@ function RoundReveal({ room }: { room: RoomView }) {
               <View key={c.id} style={{ gap: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <T style={{ fontFamily: F.bodyBold, fontSize: 18 }}>{c.playerName}</T>
-                  <T style={{ fontFamily: F.display, fontSize: 18, color: TIERS[c.tier].color }}>+{c.points}</T>
+                  <T style={{ fontFamily: F.display, fontSize: 18, color: TIERS[c.tier].text }}>+{c.points}</T>
                   {c.sameAs?.length ? <Mono>same as {c.sameAs.join(', ')}</Mono> : same[c.id] ? <Mono>same as {same[c.id]}</Mono> : null}
                 </View>
                 <GameCard card={c} width={cw} />
@@ -330,7 +326,7 @@ function Results({ room }: { room: RoomView }) {
   const { width } = useWindowDimensions();
   const me = squad.session!.playerId;
   const all = room.rounds.flatMap((r) => r.cards);
-  const best = [...all].sort((a, b) => b.points - a.points || b.rarity - a.rarity)[0];
+  const best = [...all].sort((a, b) => b.points - a.points || b.rarity - a.rarity || a.at - b.at)[0];
   const ranking = [...room.players].sort((a, b) => b.score - a.score);
   const top = ranking[0]?.score ?? 0;
   const winners = room.winners ?? (top > 0 ? ranking.filter((p) => p.score === top).map((p) => p.id) : []);
@@ -353,7 +349,7 @@ function Results({ room }: { room: RoomView }) {
         </View>
         {best && (
           <View style={{ alignItems: 'center', gap: 10 }}>
-            <Label>Find of the game · {best.playerName}</Label>
+            <Label>Find of the game · {best.playerId === me || (!best.playerId && best.playerName === room.players.find((p) => p.id === me)?.name) ? 'You' : best.playerName}</Label>
             <GameCard card={best} width={cw} />
           </View>
         )}
@@ -404,7 +400,7 @@ const styles = StyleSheet.create({
   tile: { width: 62, height: 80, borderRadius: 12, borderWidth: 2, borderColor: C.ink, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center', boxShadow: `0px 4px 0px ${C.ink}` },
   player: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, borderWidth: 2, borderColor: C.line },
-  track: { height: 8, borderRadius: 999, backgroundColor: C.paperDeep, marginTop: 10, overflow: 'hidden' },
+  track: { height: 12, borderRadius: 999, backgroundColor: C.paperDeep, marginTop: 6, overflow: 'hidden', borderWidth: 2, borderColor: C.ink },
   pchip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 12, borderRadius: 999, borderWidth: 2, borderColor: C.ink },
   locked: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, height: 58, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed', borderColor: C.ink },
   offline: { position: 'absolute', top: 54, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, height: 34, borderRadius: 999, backgroundColor: C.ink },

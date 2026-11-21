@@ -13,7 +13,6 @@ import DailyScreen from './src/screens/DailyScreen';
 import Home from './src/screens/Home';
 import Shoot from './src/screens/Shoot';
 import Squad from './src/screens/Squad';
-import { initNotifications } from './src/notify';
 import { SquadProvider } from './src/squad';
 import { C } from './src/theme';
 
@@ -50,9 +49,6 @@ export default function App() {
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});
   }, [ready]);
-  useEffect(() => {
-    initNotifications().catch(() => {});
-  }, []);
   if (!ready) return null;
   return (
     <SafeAreaProvider>

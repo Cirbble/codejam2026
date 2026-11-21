@@ -54,9 +54,18 @@ export type RoomView = {
   best?: Record<string, string>;
   roundWinners?: (string | null)[];
   winners?: string[];
+  revealMs?: number;
 };
 
 export const MAX_TRIES = 6;
+export const SITE = 'https://rarefind-production.up.railway.app';
+export const inviteLink = (code: string) => `${SITE}/play/?join=${code}`;
+
+/** Code from an invite link (?join=CODE on the web, rarefind://join/CODE in the app). */
+export function joinCodeFrom(url: string | null | undefined): string | null {
+  const m = url && /(?:[?&]join=|join\/)([A-Za-z]{4})/.exec(url);
+  return m ? m[1].toUpperCase() : null;
+}
 
 export const SERVER: string = (
   process.env.EXPO_PUBLIC_SERVER_URL ||
@@ -115,7 +124,7 @@ export async function submitFind(
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const ctl = new AbortController();
-      const t = setTimeout(() => ctl.abort(), 30_000);
+      const t = setTimeout(() => ctl.abort(), 20_000);
       let j: FindResult | null = null;
       try {
         const r = await fetch(SERVER + '/api/find', { method: 'POST', headers: { 'content-type': 'application/json' }, body: payload, signal: ctl.signal });
@@ -134,3 +143,10 @@ export async function submitFind(
 
 /** Prompts and labels arrive lowercase; show them sentence-case. */
 export const cap = (s?: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
+
+/** One concrete sentence about how rare a card is, used under cards. */
+export function rarityLine(c: { title: string; sameCount: number; totalCount: number }) {
+  const what = c.title.charAt(0).toLowerCase() + c.title.slice(1);
+  if (c.sameCount <= 1) return `Only you found a ${what} · ${c.totalCount} ${c.totalCount === 1 ? 'find' : 'finds'} for this prompt`;
+  return `${c.sameCount} of ${c.totalCount} finds were a ${what}`;
+}

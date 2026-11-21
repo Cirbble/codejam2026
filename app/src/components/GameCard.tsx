@@ -64,12 +64,12 @@ export function GameCard({ card, width, onPress, style, live = true, flat }: { c
     >
       {frame}
       <View style={[styles.inner, { borderRadius: Math.max(6, 12 * s) }]}>
-        {!compact && !thumb && (
-          <View style={[styles.head, { paddingHorizontal: 12 * s, height: 34 * s }]}>
-            <Text numberOfLines={1} style={{ flex: 1, fontFamily: F.bodyBold, fontSize: 11 * s + 1, letterSpacing: 1, textTransform: 'uppercase', color: C.inkSoft }}>
+        {!compact && (
+          <View style={[styles.head, thumb && { height: 24, paddingHorizontal: 9 }, { paddingHorizontal: 12 * s, height: 34 * s }]}>
+            <Text numberOfLines={1} style={{ flex: 1, fontFamily: F.bodyBold, fontSize: thumb ? 10 : 11 * s + 1, letterSpacing: thumb ? 0.6 : 1, textTransform: 'uppercase', color: C.inkSoft }}>
               {card.promptText}
             </Text>
-            <Text style={{ fontFamily: F.mono, fontSize: 14 * s + 1, color: C.ink }}>{card.points}</Text>
+            {!thumb && <Text style={{ fontFamily: F.mono, fontSize: 14 * s + 1, color: C.ink }}>{card.points}</Text>}
           </View>
         )}
         <View style={[styles.photo, compact ? { margin: 0, borderWidth: 0, borderRadius: 0 } : { marginHorizontal: 10 * s, borderRadius: 8 * s }]}>

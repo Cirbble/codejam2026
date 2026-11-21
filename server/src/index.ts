@@ -7,10 +7,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Room } from './room.js';
-import { judgePhoto, judgeStats, type Judgement } from './judge.js';
+import { IP_HOURLY_JUDGE, ipAttempts, judgePhoto, judgeStats, type Judgement } from './judge.js';
 import { canonicalLabel, normalizeLabel, scoreFind, titleFor } from './rarity.js';
 import { dailyPrompts, nextTorontoMidnight, promptById, squadPrompts, torontoDay } from './prompts.js';
-import { DATA_DIR, PHOTO_DIR, byDevice, cards, countFind, dailyEntry, dailyEntryMut, daily, flushAll, flushFind, promptTotals, saveCard, topLabels, writeAtomic } from './store.js';
+import { DATA_DIR, PHOTO_DIR, byDevice, cards, commitFinds, countFind, dailyEntry, dailyEntryMut, daily, dropCardsWithoutPhotos, flushAll, usedPhoto, promptTotals, saveCard, topLabels, writeAtomic } from './store.js';
 import { MAX_TRIES } from './room.js';
 import { Lru } from './lru.js';
 import type { Card, ClientMsg, ErrorCode, FindBody, Prompt, Reply, ServerMsg, WsErrorCode } from './types.js';
@@ -64,7 +64,11 @@ const PUBLIC = path.resolve(process.env.PUBLIC_DIR || 'public');
 app.use(express.static(PUBLIC, { extensions: ['html'], maxAge: '5m' }));
 app.get(/^\/play(\/[^.]*)?$/, (_req, res) => res.sendFile(path.join(PUBLIC, 'play', 'index.html'))); // asset paths (with a dot) 404 instead of returning the page
 app.get('/health', (_req, res) => res.json({ ok: true }));
-app.get('/api/stats', (_req, res) => res.json({ judge: judgeStats, rooms: rooms.size, cards: Object.keys(cards.data).length }));
+app.get('/api/stats', (req, res) => {
+  const token = process.env.STATS_TOKEN;
+  if (!token || req.query.token !== token) return res.sendStatus(404);
+  res.json({ judge: judgeStats, rooms: rooms.size, cards: Object.keys(cards.data).length });
+});
 
 function cardsOf(device: string): Card[] {
   return (byDevice.data[device] ?? []).map((id) => cards.data[id]).filter(Boolean);
@@ -159,20 +163,31 @@ function gate(rateKey: string, ip: string): Reply | null {
   const since = now - (lastJudge.get(rateKey) ?? 0);
   if (since < JUDGE_GAP_MS) return rateLimited('One photo every few seconds.', JUDGE_GAP_MS - since);
   if (inFlight >= MAX_IN_FLIGHT) return rateLimited('Busy. Try again in a few seconds.', 2000);
+  const hour = ipAttempts(ip);
+  if (hour.length >= IP_HOURLY_JUDGE) return rateLimited('This network has sent a lot of photos. Try again later.', 3600_000 - (now - hour[0]));
   ipHits.set(ip, [...hits, now]);
   lastJudge.set(rateKey, now);
   return null;
 }
 
-async function judge(prompt: Prompt, b64: string, rateKey: string) {
+async function judge(prompt: Prompt, b64: string, rateKey: string, ip: string, mode: 'daily' | 'squad') {
   inFlight++;
   try {
-    const r = await judgePhoto(prompt, topLabels(prompt.id, 40).map((x) => x.label), b64);
+    // every provider attempt, failures included, is charged to the IP and global budgets inside judgePhoto
+    const r = await judgePhoto(prompt, topLabels(prompt.id, 40).map((x) => x.label), b64, mode, ip);
     if (!r.ok) lastJudge.delete(rateKey); // no cooldown when the AI didn't answer
     return r;
   } finally {
     inFlight--;
   }
+}
+
+function judgeFailure(error: 'budget' | 'ai_down' | 'ip', ip: string): Reply {
+  if (error === 'ip') {
+    const hits = ipAttempts(ip);
+    return rateLimited('This network has sent a lot of photos. Try again later.', hits.length ? 3600_000 - (Date.now() - hits[0]) : 60_000);
+  }
+  return error === 'budget' ? fail(503, 'budget', 'The judge is resting. Try again later.') : fail(503, 'ai_down', 'The judge is unavailable. Try again.');
 }
 
 function outcomeOf(j: Judgement) {
@@ -182,10 +197,16 @@ function outcomeOf(j: Judgement) {
   return { accepted: false as const, reason: 'no_match' as const, verdict: j.verdict };
 }
 
-function mintCard(prompt: Prompt, j: Judgement, jpeg: Buffer, device: string, extra: Partial<Card>): Card {
+const SAVE_FAILED = (): Reply => fail(503, 'ai_down', 'Could not save your find. Send again.');
+const usedPhotoReply = (triesLeft: number): Reply => ({ status: 200, body: { accepted: false, reason: 'unclear', verdict: 'You already used this photo. Find a new one.', triesLeft } });
+const hashOf = (jpeg: Buffer) => createHash('sha1').update(jpeg).digest('hex');
+
+/** Count, score and durably store an accepted find. Throws (with all in-memory state undone) if it can't be saved. */
+function mintCard(prompt: Prompt, j: Judgement, jpeg: Buffer, device: string, extra: Partial<Card>): { card: Card; undo: () => void } {
   const label = canonicalLabel(normalizeLabel(j.label), promptTotals(prompt.id).map);
-  const imageHash = createHash('sha1').update(jpeg).digest('hex');
-  const { sameCount, totalCount, firstEver } = countFind(prompt.id, label, device, imageHash);
+  const imageHash = hashOf(jpeg);
+  const count = countFind(prompt.id, label, device, imageHash);
+  const { sameCount, totalCount, firstEver } = count;
   const s = scoreFind(j.aiRarity, sameCount, totalCount, firstEver);
   const id = randomBytes(12).toString('hex');
   const card: Card = {
@@ -205,9 +226,20 @@ function mintCard(prompt: Prompt, j: Judgement, jpeg: Buffer, device: string, ex
     mode: 'daily',
     ...extra,
   };
-  saveCard(card, device, jpeg);
-  flushFind(); // durable before the reply goes out
-  return card;
+  let undoCard: () => void;
+  try {
+    undoCard = saveCard(card, device, jpeg, imageHash); // photo on disk first; metadata staged in memory, the caller commits
+  } catch (e) {
+    count.undo();
+    throw e;
+  }
+  return {
+    card,
+    undo: () => {
+      undoCard();
+      count.undo();
+    },
+  };
 }
 
 const reqHits = new Map<string, number[]>();
@@ -235,13 +267,14 @@ async function handleFind(b: any, device: string, submissionId: string, ip: stri
   if (e.cards[prompt.id]) return fail(409, 'locked', 'You already locked this prompt today.');
   if ((e.tries[prompt.id] ?? 0) >= MAX_TRIES) return fail(409, 'locked', 'No tries left for this prompt today.');
   if (dailyPending.has(lockKey)) return rateLimited('One photo at a time.', 2000);
+  if (usedPhoto(prompt.id, device, hashOf(jpeg))) return usedPhotoReply(Math.max(0, MAX_TRIES - (e.tries[prompt.id] ?? 0)));
   const g = gate(device, ip);
   if (g) return g;
   dailyPending.add(lockKey);
   return tracked(key, async () => {
   try {
-    const r = await judge(prompt, b64, device);
-    if (!r.ok) return r.error === 'budget' ? fail(503, 'budget', 'The judge is resting. Try again later.') : fail(503, 'ai_down', 'The judge is unavailable. Try again.');
+    const r = await judge(prompt, b64, device, ip, 'daily');
+    if (!r.ok) return judgeFailure(r.error, ip);
     const entry = dailyEntryMut(day, device);
     if (entry.cards[prompt.id]) return fail(409, 'locked', 'You already locked this prompt today.');
     entry.tries[prompt.id] = (entry.tries[prompt.id] ?? 0) + 1;
@@ -252,9 +285,22 @@ async function handleFind(b: any, device: string, submissionId: string, ip: stri
     };
     const o = outcomeOf(r.j);
     if (!o.accepted) return keep({ status: 200, body: { accepted: false, reason: o.reason, verdict: o.verdict, triesLeft: Math.max(0, MAX_TRIES - entry.tries[prompt.id]) } });
-    const card = mintCard(prompt, r.j, jpeg, device, { mode: 'daily', day });
-    entry.cards[prompt.id] = card.id;
-    return keep({ status: 200, body: { accepted: true, card } });
+    let made: ReturnType<typeof mintCard> | undefined;
+    try {
+      made = mintCard(prompt, r.j, jpeg, device, { mode: 'daily', day });
+      const reply: Reply = { status: 200, body: { accepted: true, card: made.card } };
+      entry.cards[prompt.id] = made.card.id;
+      (entry.subs ??= {})[submissionId] = reply;
+      commitFinds(); // ONE atomic write: counts, marks, card, device list, daily lock and reply
+      return reply;
+    } catch (err) {
+      console.error('[find] save failed', (err as Error).message);
+      made?.undo();
+      delete entry.cards[prompt.id];
+      delete entry.subs?.[submissionId];
+      entry.tries[prompt.id] = Math.max(0, entry.tries[prompt.id] - 1);
+      return SAVE_FAILED(); // transient: not cached, the same submission can be sent again
+    }
   } finally {
     dailyPending.delete(lockKey);
   }
@@ -272,22 +318,52 @@ async function squadFind(b: any, device: string, submissionId: string, ip: strin
     room.abort(player.id, submissionId);
     return fail(409, 'closed', 'That prompt is over.');
   }
-  const rateKey = player.device || `p:${room.code}:${player.id}`; // the authenticated player's device, not the caller's claim
+  if (usedPhoto(pre.prompt.id, player.device || device, hashOf(jpeg))) {
+    room.abort(player.id, submissionId);
+    return usedPhotoReply(room.triesLeft(player.id));
+  }
+  const rateKey = `${room.code}:${player.id}`; // per squad member: two tabs on one laptop share a device id
   const g = gate(rateKey, ip);
   if (g) {
     room.abort(player.id, submissionId);
     return g;
   }
   return tracked(key, async () => {
-  const r = await judge(pre.prompt, b64, rateKey);
+  const r = await judge(pre.prompt, b64, rateKey, ip, 'squad');
   if (!r.ok) {
     room.abort(player.id, submissionId);
-    return r.error === 'budget' ? fail(503, 'budget', 'The judge is resting. Try again later.') : fail(503, 'ai_down', 'The judge is unavailable. Try again.');
+    return judgeFailure(r.error, ip);
   }
-  const reply = room.settle(player.id, submissionId, pre.round, outcomeOf(r.j), () =>
-    mintCard(pre.prompt, r.j, jpeg, player.device || device, { mode: 'squad', playerName: player.name, playerId: player.id }),
-  );
-  if ('accepted' in reply.body && reply.body.accepted) saveRooms();
+  let reply: Reply;
+  let made: ReturnType<typeof mintCard> | undefined;
+  try {
+    reply = room.settle(player.id, submissionId, pre.round, outcomeOf(r.j), () => {
+      made = mintCard(pre.prompt, r.j, jpeg, player.device || device, { mode: 'squad', playerName: player.name, playerId: player.id });
+      try {
+        commitFinds(); // atomic write of the find metadata (photo already on disk)
+      } catch (e) {
+        made.undo();
+        made = undefined;
+        throw e;
+      }
+      return made.card;
+    });
+  } catch (err) {
+    console.error('[find] save failed', (err as Error).message);
+    return SAVE_FAILED();
+  }
+  if (made && 'accepted' in reply.body && reply.body.accepted) {
+    try {
+      saveRooms(true); // the room snapshot must hold the find too
+    } catch (err) {
+      console.error('[find] room snapshot failed', (err as Error).message);
+      room.unsettle(player.id, submissionId, made.card);
+      made.undo();
+      commitFinds(false); // best effort: take the card back out of finds.json
+      broadcast(room, true);
+      return SAVE_FAILED();
+    }
+  }
   broadcast(room, true);
   return reply;
   });
@@ -419,6 +495,16 @@ function attach(conn: Conn, room: Room, playerId: string, secret: string) {
   broadcast(room, true);
 }
 
+function leavePlayer(room: Room, playerId: string) {
+  room.removePlayer(playerId);
+  for (const c of conns) if (c.code === room.code && c.playerId === playerId) c.code = c.playerId = undefined;
+  if (room.players.size === 0) {
+    rooms.delete(room.code);
+    sentVersion.delete(room.code);
+  } else broadcast(room);
+  saveRooms();
+}
+
 function handle(conn: Conn, m: ClientMsg) {
   switch (m?.t) {
     case 'create': {
@@ -455,6 +541,19 @@ function handle(conn: Conn, m: ClientMsg) {
       attach(conn, room, p.id, p.secret);
       return;
     }
+    case 'leave': {
+      if (!m.code && !m.playerId) break; // a plain leave on an attached socket, below
+      // leave with credentials on any socket: lets the app retry a leave that happened offline
+      if (limited(joinHits, conn.ip, 60)) throw new WsError('rate', 'Too many tries. Wait a minute.');
+      const room = getRoom(m.code);
+      const p = room?.players.get(String(m.playerId));
+      if (room && p) {
+        if (p.secret !== m.secret) throw new WsError('other', 'Wrong player credentials.');
+        leavePlayer(room, p.id);
+      }
+      send(conn.ws, { t: 'left' }); // already gone counts as left
+      return;
+    }
   }
   const room = getRoom(conn.code);
   const me = conn.playerId;
@@ -485,10 +584,9 @@ function handle(conn: Conn, m: ClientMsg) {
       break;
     }
     case 'leave':
-      room.removePlayer(me);
-      for (const c of conns) if (c.code === room.code && c.playerId === me) c.code = c.playerId = undefined;
-      if (room.players.size === 0) rooms.delete(room.code);
-      break;
+      leavePlayer(room, me);
+      send(conn.ws, { t: 'left' });
+      return;
     default:
       return;
   }
@@ -526,12 +624,13 @@ setInterval(() => {
 
 // ---------------- persistence ----------------
 let savedVersions = '';
-function saveRooms() {
+function saveRooms(strict = false) {
   try {
     writeAtomic(ROOMS_FILE, JSON.stringify({ rooms: [...rooms.values()].map((r) => r.snapshot()) }));
     savedVersions = [...rooms.values()].map((r) => `${r.code}${r.version}`).join();
   } catch (e) {
     console.warn('[persist] rooms save failed', (e as Error).message);
+    if (strict) throw e;
   }
 }
 function loadRooms() {
@@ -548,6 +647,10 @@ function loadRooms() {
   }
 }
 loadRooms();
+{
+  const dropped = dropCardsWithoutPhotos();
+  if (dropped) console.warn(`[store] dropped ${dropped} cards whose photo is missing`);
+}
 setInterval(() => {
   const v = [...rooms.values()].map((r) => `${r.code}${r.version}`).join();
   if (v !== savedVersions) saveRooms();

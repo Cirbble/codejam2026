@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COUNTDOWN_MS, HUNT_MS, MAX_TRIES, QUICK_HUNT_MS, REVEAL_MS, Room, LOBBY_IDLE_MS } from './room.js';
+import { COUNTDOWN_MS, HUNT_MS, MAX_TRIES, QUICK_HUNT_MS, REVEAL_MAX_MS as REVEAL_MS, Room, LOBBY_IDLE_MS, revealMsFor } from './room.js';
 import { scoreFind, tierFor, normalizeLabel, canonicalLabel } from './rarity.js';
 import { INDOOR, OUTDOOR, dailyPrompts, squadPrompts, seeded, torontoDay, nextTorontoMidnight, QUICK_OPENER } from './prompts.js';
 import type { Card, PromptDef } from './types.js';
@@ -56,7 +56,8 @@ test('phase flow: lobby -> countdown(3s) -> hunting -> reveal(8s) -> ... -> ende
     assert.equal(room.phase, 'reveal', `round ${r} reveal`);
     assert.deepEqual(room.view().reveal, []);
     assert.equal(room.view().rounds.length, r);
-    advance(REVEAL_MS);
+    assert.equal(room.view().revealMs, revealMsFor(0));
+    advance(revealMsFor(0));
   }
   assert.equal(room.phase, 'ended');
   assert.equal(room.view().rounds.length, 5);
@@ -148,7 +149,7 @@ test('reveal holds for a photo sent before the deadline until its verdict lands 
   assert.equal(pre.kind, 'ok');
   advance(1000);
   assert.equal(room.phase, 'reveal');
-  advance(REVEAL_MS + 1000); // 9 s verdict
+  advance(9000); // 9 s verdict
   assert.equal(room.phase, 'reveal', 'held for the in-flight verdict');
   assert.equal(room.round, 1);
   const r = room.settle(ps[0].id, 'slow', 1, { accepted: true }, () => card('pigeon', 'P0', 30, 50, ps[0].id));
@@ -277,7 +278,7 @@ test('idempotent submissionId: the same submission returns the same reply and sc
   const b = go();
   assert.deepEqual(a, b);
   assert.equal(minted, 1);
-  assert.equal(room.players.get(ps[0].id)!.score, 30);
+  assert.equal(room.players.get(ps[0].id)!.score, 0, 'no points shown while the hunt runs');
   // a new submission after locking is refused
   const c = find(room, ps[0].id, 'other', 'bench');
   assert.equal((c.body as any).error, 'locked');
@@ -376,13 +377,14 @@ test('resume after a snapshot restore: same phase, timers paused for the downtim
   back.setConnected(ps[0].id, true);
   back.setConnected(ps[1].id, true);
   assert.equal(back.view().players.find((p) => p.id === ps[0].id)!.found, true);
-  assert.equal(back.players.get(ps[0].id)!.score, 60);
+  assert.equal(back.players.get(ps[0].id)!.score, 0, 'points land at the reveal');
   // the same submission id after restore gets the same answer
   const again = back.precheck(ps[0].id, 'keep');
   assert.equal(again.kind, 'prior');
   assert.deepEqual((again as any).reply, r1);
   // and the game continues to the end
   find(back, ps[1].id, 'b', 'stop sign');
+  assert.equal(back.players.get(ps[0].id)!.score, 60);
   assert.equal(back.phase, 'reveal');
   for (let i = 0; i < 5 * 4 * (HUNT_MS + REVEAL_MS) && back.phase !== 'ended'; i += 1000) {
     clock.t += 1000;
@@ -438,4 +440,88 @@ test('daily: 5 prompts, deterministic by date, no repeated category, Toronto day
   assert.ok(OUTDOOR.length >= 55 && INDOOR.length >= 14);
   assert.ok([...OUTDOOR, ...INDOOR].every((p) => p.examples && p.text === p.text.toLowerCase().replace(/^./, (c) => c)));
   assert.equal(new Set([...OUTDOOR, ...INDOOR].map((p) => p.id)).size, OUTDOOR.length + INDOOR.length);
+});
+
+test('ranking: points first, then rarity, then the earlier find (best card, round winner, reveal order)', () => {
+  const { room, ps, advance } = setup(false, 2);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const one = find(room, ps[0].id, 'a', 'golden retriever', 100, 80); // first-ever One of One at rarity 80
+  const epic = find(room, ps[1].id, 'b', 'red cardinal', 85, 90);
+  const v = room.view();
+  assert.deepEqual(v.reveal!.map((c) => c.points), [100, 85]);
+  assert.deepEqual(v.roundWinners, [ps[0].id]);
+  room.skip(ps[0].id);
+  find(room, ps[0].id, 'c', 'stop sign', 85, 95);
+  while (room.phase !== 'ended') room.skip(ps[0].id);
+  assert.equal(room.view().best[ps[0].id], (one.body as any).card.id, '100 pts at rarity 80 beats 85 pts at rarity 95');
+  assert.equal(room.view().best[ps[1].id], (epic.body as any).card.id);
+});
+
+test('scores stay at completed-round totals during countdown and hunting', () => {
+  const { room, ps, advance } = setup(false, 2);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  find(room, ps[0].id, 'a', 'bench', 60, 70);
+  assert.deepEqual(room.view().players.map((p) => p.score), [0, 0]);
+  room.skip(ps[0].id);
+  assert.deepEqual(room.view().players.map((p) => p.score), [60, 0], 'applied at the reveal');
+  room.skip(ps[0].id);
+  find(room, ps[1].id, 'b', 'pigeon', 30, 45);
+  assert.deepEqual(room.view().players.map((p) => p.score), [60, 0], 'round 2 hidden while hunting');
+  room.skip(ps[0].id);
+  assert.deepEqual(room.view().players.map((p) => p.score), [60, 30]);
+});
+
+test('a failed save keeps the submission retryable: no try used, nothing stored', () => {
+  const { room, ps, advance } = setup(false, 2);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const pre = room.precheck(ps[0].id, 'disk');
+  assert.equal(pre.kind, 'ok');
+  assert.throws(() => room.settle(ps[0].id, 'disk', 1, { accepted: true }, () => { throw new Error('ENOSPC'); }));
+  assert.equal(room.triesLeft(ps[0].id), MAX_TRIES);
+  assert.equal(room.found.has(ps[0].id), false);
+  const again = find(room, ps[0].id, 'disk', 'bench');
+  assert.equal((again.body as any).accepted, true, 'same submissionId succeeds on retry');
+});
+
+test('reveal length: 6 s plus 3 s per card, capped at 20 s; host skip still works', () => {
+  assert.equal(revealMsFor(0), 6000);
+  assert.equal(revealMsFor(2), 12000);
+  assert.equal(revealMsFor(5), 20000);
+  assert.equal(revealMsFor(12), 20000);
+  const { room, ps, advance, now } = setup(false, 3);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  find(room, ps[0].id, 'a', 'bench');
+  find(room, ps[1].id, 'b', 'pigeon');
+  find(room, ps[2].id, 'c', 'stop sign');
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.view().revealMs, 15000);
+  assert.equal(room.view().endsAt, now() + 15000);
+  advance(14_000);
+  assert.equal(room.phase, 'reveal');
+  room.skip(ps[0].id);
+  assert.equal(room.phase, 'hunting');
+  assert.equal(room.view().revealMs, null);
+});
+
+test('unsettle takes back an accepted find whose room snapshot failed; the same submission works again', () => {
+  const { room, ps, advance } = setup(false, 3);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const r = find(room, ps[0].id, 'a', 'bench', 60, 70);
+  room.unsettle(ps[0].id, 'a', (r.body as any).card);
+  assert.equal(room.view().players[0].found, false);
+  assert.equal(room.triesLeft(ps[0].id), MAX_TRIES);
+  assert.equal((find(room, ps[0].id, 'a', 'bench', 60, 70).body as any).accepted, true, 'no stored reply: the retry goes through');
+  // after the reveal applied the points, unsettle takes them back too
+  find(room, ps[1].id, 'b', 'pigeon', 30, 45);
+  const c = find(room, ps[2].id, 'c', 'stop sign', 10, 20);
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.players.get(ps[2].id)!.score, 10);
+  room.unsettle(ps[2].id, 'c', (c.body as any).card);
+  assert.equal(room.players.get(ps[2].id)!.score, 0);
+  assert.equal(room.view().reveal!.length, 2);
 });

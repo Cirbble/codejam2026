@@ -82,7 +82,7 @@ export function IconButton({ icon, onPress, label, tone = 'ink' }: { icon: React
         tap();
         onPress();
       }}
-      style={({ pressed }) => [styles.icon, tone === 'light' && { backgroundColor: 'rgba(255,255,255,0.16)', borderColor: 'rgba(255,255,255,0.5)' }, pressed && { opacity: 0.6 }]}
+      style={({ pressed }) => [styles.icon, tone === 'light' && { backgroundColor: 'rgba(18,21,15,0.6)', borderColor: 'rgba(255,255,255,0.7)' }, pressed && { opacity: 0.6 }]}
     >
       <Feather name={icon} size={20} color={tone === 'light' ? C.white : C.ink} />
     </Pressable>

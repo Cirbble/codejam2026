@@ -73,7 +73,7 @@ export function FlipReveal({ card, width }: { card: Card; width: number }) {
         <GameCard card={card} width={width} />
       </Animated.View>
       <Animated.View style={{ position: 'absolute', top: width * CARD_RATIO + 22, alignSelf: 'center', alignItems: 'center', opacity: stamp, transform: [{ scale: st }] }}>
-        <Text style={{ fontFamily: F.display, fontSize: 32, color: t.color, letterSpacing: -0.5 }}>
+        <Text style={{ fontFamily: F.display, fontSize: 32, color: t.text, letterSpacing: -0.5 }}>
           {t.name} · +{card.points}
         </Text>
       </Animated.View>

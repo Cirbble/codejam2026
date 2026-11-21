@@ -1,0 +1,15 @@
+**8/10 as a hackathon entry.** Strong discovery loop, good social reveal, and a thoughtfully tested room engine. Recovery and shared-network behavior remain the main weaknesses. This includes edits observed during the review.
+
+1. **P1 — Shared Wi-Fi can block a legitimate game.** [server/src/index.ts:173](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/index.ts:173) defaults to **40 judged photos per IP/hour**. Twelve players need 60 accepted photos for one game, before rejections or demo rehearsals. **Fix:** allow a complete squad game plus retries per network, with squad capacity reserved in this limiter too.
+
+2. **P1 — Failed AI requests bypass that IP budget.** [server/src/index.ts:187](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/index.ts:187) charges only successful, uncached judgments, while provider failures consume the global budget. Malformed JPEGs passing the minimal header check can therefore exhaust global capacity without reaching the IP cap. **Fix:** charge each provider attempt to both budgets before dispatch.
+
+3. **P1 — Storage rollback leaves inconsistent disk state.** [server/src/store.ts:119](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/store.ts:119) commits files separately; rollback restores memory only. In-memory fault injection reproduced a restart restoring a card/count whose photo had been deleted, with its used-photo mark retained. [Squad snapshot failures](C:/Users/Benjamin/Desktop/Codejam16/rarefind/server/src/index.ts:610) are also swallowed before success is returned. **Fix:** commit metadata and submission replies in one transaction or recoverable journal; acknowledge only after durable commit.
+
+4. **P2 — Pocket notifications disagree with the game.** [app/src/notify.ts:44](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/notify.ts:44) assumes an eight-second reveal, while current server reveals last 6–20 seconds and can extend. [Saved-session resume](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/squad.tsx:141) also skips notification initialization. **Fix:** initialize on resume and manage reminders in the provider from authoritative phase/deadline updates.
+
+5. **P2 — Leaving on flaky connections creates ghost players.** [app/src/squad.tsx:188](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/squad.tsx:188) discards credentials immediately after sending, without waiting for `left`. Offline leaves retry only on the next app launch. Ghosts occupy slots and prevent early round completion. **Fix:** persist every pending leave until acknowledged; retry on connectivity recovery.
+
+6. **P2 — Reconnect watchdog misses stalled connection attempts.** [app/src/squad.tsx:113](C:/Users/Benjamin/Desktop/Codejam16/rarefind/app/src/squad.tsx:113) checks only `OPEN` sockets. A restored session stuck in `CONNECTING` has no application timeout. **Fix:** bound every connection and resume handshake, then close and retry with backoff.
+
+Both typechecks pass. With `--test-isolation=none`, **25 engine tests pass**; storage tests are blocked by sandbox temporary-directory permissions. No files were modified by this review.

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Card, Reply } from './types.js';
 
@@ -6,75 +6,105 @@ export const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data');
 export const PHOTO_DIR = join(DATA_DIR, 'p');
 mkdirSync(PHOTO_DIR, { recursive: true });
 
+/** temp file + rename: the target is either the old or the new document, never half-written. */
 export function writeAtomic(file: string, text: string) {
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, text);
   renameSync(tmp, file);
 }
 
-/** A JSON document on the volume: loaded once, written atomically, debounced. */
-export class JsonFile<T extends object> {
-  data: T;
-  private timer: NodeJS.Timeout | null = null;
-  constructor(
-    private name: string,
-    init: () => T,
-    private debounceMs = 750,
-  ) {
-    const file = this.file;
-    let loaded: T | null = null;
-    try {
-      if (existsSync(file)) loaded = JSON.parse(readFileSync(file, 'utf8'));
-    } catch (e) {
-      console.warn(`[store] ${name} unreadable, starting empty:`, (e as Error).message);
-    }
-    this.data = loaded ?? init();
-    all.add(this);
+export type DailyEntry = { cards: Record<string, string>; tries: Record<string, number>; subs?: Record<string, Reply> };
+
+/**
+ * Every piece of find metadata lives in ONE document (finds.json), so an accepted find is committed to disk
+ * atomically: counts, dedup and used-photo marks, cards, device lists, daily progress and replies.
+ */
+type FindsDoc = {
+  /** promptId -> label -> count */
+  counts: Record<string, Record<string, number>>;
+  /** crowd-count dedup keys `d|<prompt>|<device>|<label>`, `i|<prompt>|<imageHash>`; used photos `u|<prompt>|<device>|<imageHash>` */
+  counted: Record<string, 1>;
+  cards: Record<string, Card>;
+  /** device -> card ids, oldest first */
+  devices: Record<string, string[]>;
+  /** day -> device -> progress */
+  daily: Record<string, Record<string, DailyEntry>>;
+  /** cardId -> its used-photo key, so a dropped card frees its photo mark */
+  photoMark: Record<string, string>;
+};
+const FINDS_FILE = join(DATA_DIR, 'finds.json');
+const empty = (): FindsDoc => ({ counts: {}, counted: {}, cards: {}, devices: {}, daily: {}, photoMark: {} });
+
+function readJson(file: string): any {
+  try {
+    return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : undefined;
+  } catch (e) {
+    console.warn(`[store] ${file} unreadable:`, (e as Error).message);
+    return undefined;
   }
-  get file() {
-    return join(DATA_DIR, `${this.name}.json`);
+}
+
+function loadDoc(): FindsDoc {
+  const doc = readJson(FINDS_FILE);
+  if (doc) return { ...empty(), ...doc };
+  // one-time migration from the earlier one-file-per-collection layout
+  const legacy = (n: string) => readJson(join(DATA_DIR, `${n}.json`)) ?? {};
+  const d: FindsDoc = { ...empty(), counts: legacy('counts'), counted: legacy('counted'), cards: legacy('cards'), devices: legacy('devices'), daily: legacy('daily') };
+  if (Object.keys(d.cards).length || Object.keys(d.counts).length) console.log('[store] migrated legacy files into finds.json');
+  return d;
+}
+
+const doc: FindsDoc = loadDoc();
+let timer: NodeJS.Timeout | null = null;
+
+/** Write the whole find document now. strict: rethrow (an accepted find is only acknowledged once it is on disk). */
+export function commitFinds(strict = true) {
+  if (timer) clearTimeout(timer);
+  timer = null;
+  try {
+    writeAtomic(FINDS_FILE, JSON.stringify(doc));
+  } catch (e) {
+    console.warn('[store] finds save failed:', (e as Error).message);
+    if (strict) throw e;
+  }
+}
+function dirty() {
+  if (timer) return;
+  timer = setTimeout(() => commitFinds(false), 750);
+  timer.unref?.();
+}
+export function flushAll() {
+  commitFinds(false);
+}
+
+/** A view of one collection inside the single document. */
+class Section<K extends keyof FindsDoc> {
+  constructor(private key: K) {}
+  get data(): FindsDoc[K] {
+    return doc[this.key];
   }
   dirty() {
-    if (this.timer) return;
-    this.timer = setTimeout(() => this.flush(), this.debounceMs);
-    this.timer.unref?.();
+    dirty();
   }
-  flush() {
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
-    try {
-      writeAtomic(this.file, JSON.stringify(this.data));
-    } catch (e) {
-      console.warn(`[store] ${this.name} save failed:`, (e as Error).message);
-    }
+  flush(strict = false) {
+    commitFinds(strict);
   }
 }
-const all = new Set<JsonFile<any>>();
-export function flushAll() {
-  for (const f of all) f.flush();
-}
-
-// ---------------- documents ----------------
-/** promptId -> label -> count */
-export const counts = new JsonFile<Record<string, Record<string, number>>>('counts', () => ({}));
-export const cards = new JsonFile<Record<string, Card>>('cards', () => ({}));
-/** device -> card ids, oldest first */
-export const byDevice = new JsonFile<Record<string, string[]>>('devices', () => ({}));
-/** crowd-count dedup keys: `d|<prompt>|<device>|<label>` and `i|<prompt>|<imageHash>` */
-export const counted = new JsonFile<Record<string, 1>>('counted', () => ({}));
-export type DailyEntry = { cards: Record<string, string>; tries: Record<string, number>; subs?: Record<string, Reply> };
-/** day -> device -> progress */
-export const daily = new JsonFile<Record<string, Record<string, DailyEntry>>>('daily', () => ({}));
+export const counts = new Section('counts');
+export const counted = new Section('counted');
+export const cards = new Section('cards');
+export const byDevice = new Section('devices');
+export const daily = new Section('daily');
 
 export function promptTotals(promptId: string) {
-  const m = counts.data[promptId] ?? {};
+  const m = doc.counts[promptId] ?? {};
   let total = 0;
   for (const n of Object.values(m)) total += n;
   return { map: m, total };
 }
 
 export function topLabels(promptId: string, n: number): { label: string; count: number }[] {
-  return Object.entries(counts.data[promptId] ?? {})
+  return Object.entries(doc.counts[promptId] ?? {})
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, n)
     .map(([label, count]) => ({ label, count }));
@@ -83,41 +113,88 @@ export function topLabels(promptId: string, n: number): { label: string; count: 
 /**
  * Count a find in the crowd stats at most once per (device, prompt, label) and once per image per prompt,
  * so re-submitting cannot farm rarity. Returns the counts at that moment, including this find.
+ * In memory only: the caller commits.
  */
 export function countFind(promptId: string, label: string, device: string, imageHash: string) {
-  const m = (counts.data[promptId] ??= {});
+  const m = (doc.counts[promptId] ??= {});
   const kd = `d|${promptId}|${device}|${label}`;
   const ki = `i|${promptId}|${imageHash}`;
-  const fresh = !counted.data[kd] && !counted.data[ki];
+  const fresh = !doc.counted[kd] && !doc.counted[ki];
   const firstEver = fresh && !m[label]; // decided before incrementing
   if (fresh) {
     m[label] = (m[label] ?? 0) + 1;
-    counted.data[kd] = counted.data[ki] = 1;
-    counts.dirty();
-    counted.dirty();
+    doc.counted[kd] = doc.counted[ki] = 1;
   }
   const { total } = promptTotals(promptId);
-  return { sameCount: Math.max(1, m[label] ?? 0), totalCount: Math.max(1, total), counted: fresh, firstEver };
+  const undo = () => {
+    if (!fresh) return;
+    if ((m[label] = (m[label] ?? 1) - 1) <= 0) delete m[label];
+    delete doc.counted[kd];
+    delete doc.counted[ki];
+  };
+  return { sameCount: Math.max(1, m[label] ?? 0), totalCount: Math.max(1, total), counted: fresh, firstEver, undo };
 }
 
-/** Write everything an accepted find touches before replying. */
-export function flushFind() {
-  for (const f of [counts, counted, cards, byDevice, daily]) f.flush();
+const usedKey = (promptId: string, device: string, imageHash: string) => `u|${promptId}|${device}|${imageHash}`;
+/** This device already had this exact photo accepted for this prompt. */
+export function usedPhoto(promptId: string, device: string, imageHash: string): boolean {
+  return !!doc.counted[usedKey(promptId, device, imageHash)];
 }
 
-export function saveCard(card: Card, device: string, jpeg: Buffer) {
-  writeFileSync(join(PHOTO_DIR, `${card.id}.jpg`), jpeg);
-  cards.data[card.id] = card;
-  cards.dirty();
-  (byDevice.data[device] ??= []).push(card.id);
-  byDevice.dirty();
+/**
+ * Stage an accepted card: the photo file is written first (throws before touching metadata), then the card,
+ * device list and used-photo mark go into memory. The caller commits with commitFinds(); on failure it calls
+ * the returned undo, which also deletes the photo.
+ */
+export function saveCard(card: Card, device: string, jpeg: Buffer, imageHash: string): () => void {
+  const photo = join(PHOTO_DIR, `${card.id}.jpg`);
+  writeFileSync(photo, jpeg);
+  const uk = usedKey(card.promptId, device, imageHash);
+  doc.cards[card.id] = card;
+  (doc.devices[device] ??= []).push(card.id);
+  doc.counted[uk] = 1;
+  doc.photoMark[card.id] = uk;
+  return () => {
+    delete doc.cards[card.id];
+    delete doc.photoMark[card.id];
+    const list = doc.devices[device];
+    if (list) {
+      const i = list.lastIndexOf(card.id);
+      if (i >= 0) list.splice(i, 1);
+    }
+    delete doc.counted[uk];
+    try {
+      rmSync(photo, { force: true });
+    } catch {}
+  };
 }
 
 export function dailyEntry(day: string, device: string): DailyEntry {
-  return daily.data[day]?.[device] ?? { cards: {}, tries: {} };
+  return doc.daily[day]?.[device] ?? { cards: {}, tries: {} };
 }
 
 export function dailyEntryMut(day: string, device: string): DailyEntry {
-  const d = (daily.data[day] ??= {});
+  const d = (doc.daily[day] ??= {});
   return (d[device] ??= { cards: {}, tries: {} });
+}
+
+/** Startup integrity check: drop cards whose photo file is missing (and every reference to them). */
+export function dropCardsWithoutPhotos(): number {
+  const gone = new Set<string>();
+  for (const id of Object.keys(doc.cards)) if (!existsSync(join(PHOTO_DIR, `${id}.jpg`))) gone.add(id);
+  if (!gone.size) return 0;
+  for (const id of gone) {
+    delete doc.cards[id];
+    const uk = doc.photoMark[id];
+    if (uk) delete doc.counted[uk];
+    delete doc.photoMark[id];
+  }
+  for (const [dev, list] of Object.entries(doc.devices)) doc.devices[dev] = list.filter((id) => !gone.has(id));
+  for (const byDev of Object.values(doc.daily))
+    for (const e of Object.values(byDev)) {
+      for (const [pid, cid] of Object.entries(e.cards)) if (gone.has(cid)) delete e.cards[pid];
+      for (const [sub, r] of Object.entries(e.subs ?? {})) if ((r.body as any)?.card && gone.has((r.body as any).card.id)) delete e.subs![sub];
+    }
+  commitFinds(false);
+  return gone.size;
 }

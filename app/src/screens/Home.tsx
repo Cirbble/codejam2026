@@ -3,7 +3,7 @@ import { AppState, Pressable, StyleSheet, useWindowDimensions, View } from 'reac
 import { Feather } from '@expo/vector-icons';
 import { cap, Daily, fetchDaily, MAX_TRIES } from '../api';
 import { CardBack, GameCard, Wordmark } from '../components/GameCard';
-import { Button, H, IconButton, Label, Mono, Screen, T, tap } from '../components/ui';
+import { Button, H, Label, Mono, Screen, T, tap } from '../components/ui';
 import { useNav } from '../nav';
 import { useSquad } from '../squad';
 import { C, F } from '../theme';
@@ -43,9 +43,16 @@ export default function Home() {
   const nav = useNav();
   const squad = useSquad();
   const { daily, failed, reload } = useDaily();
+  const opened = React.useRef(false);
+  useEffect(() => {
+    if (squad.pendingJoin && !squad.session && !opened.current) {
+      opened.current = true;
+      nav.push({ name: 'squad' });
+    }
+  }, [squad.pendingJoin, squad.session, nav]);
   const { width } = useWindowDimensions();
   const fanW = Math.min(width, 520) - 40;
-  const cw = Math.min(156, fanW * 0.34);
+  const cw = Math.min(140, fanW * 0.31);
   const found = daily ? daily.prompts.filter((p) => daily.cards[p.id]).length : 0;
   const total = daily?.prompts.length ?? 5;
   const done = daily != null && found === total;
@@ -55,11 +62,12 @@ export default function Home() {
     <Screen>
       <View style={styles.top}>
         <Wordmark size={36} />
-        <IconButton icon="grid" label="Collection" onPress={() => nav.push({ name: 'collection' })} />
+        <Button title="Cards" icon="layers" kind="line" onPress={() => nav.push({ name: 'collection' })} style={{ height: 44, paddingHorizontal: 14, borderRadius: 13 }} />
       </View>
       <Mono style={{ marginTop: 6 }}>{daily ? fmtDay(daily.day) : ' '}</Mono>
 
-      <View style={styles.stage}>
+      <View style={{ flex: 1, justifyContent: 'center' }}>
+      <View style={[styles.stage, { flex: 1, justifyContent: 'center' }]}>
         {/* today's five, fanned like a hand of cards */}
         <View style={{ width: fanW, height: cw * 1.4 + 40, alignItems: 'center', justifyContent: 'center' }}>
           {Array.from({ length: total }).map((_, i) => {
@@ -115,17 +123,20 @@ export default function Home() {
               <Feather name="camera" size={26} color={C.white} />
             </View>
           </Pressable>
-        ) : done ? (
+        ) : daily ? (
           <View style={[styles.next, { backgroundColor: C.card, borderWidth: 2, borderColor: C.ink }]}>
             <View style={{ flex: 1, gap: 6 }}>
-              <Label>All five found</Label>
+              <Label>{done ? 'All five found' : "That's today's hunt"}</Label>
               <H size={24}>New prompts at midnight</H>
             </View>
           </View>
         ) : null}
+      </View>
+      </View>
+      <View style={{ gap: 12, marginTop: 12 }}>
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <Button title="Today" icon="list" kind="line" onPress={() => nav.push({ name: 'daily' })} disabled={!daily} style={{ flex: 1, paddingHorizontal: 12 }} />
-          <Button title={squad.session ? 'Squad' : 'Friends'} icon="users" kind="line" onPress={() => nav.push({ name: 'squad' })} style={{ flex: 1, paddingHorizontal: 12 }} />
+          <Button title="Squad" icon="users" kind="line" onPress={() => nav.push({ name: 'squad' })} style={{ flex: 1, paddingHorizontal: 12 }} />
         </View>
       </View>
     </Screen>
@@ -134,7 +145,7 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  stage: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 26 },
+  stage: { alignItems: 'center', paddingBottom: 22 },
   next: { flexDirection: 'row', alignItems: 'center', gap: 16, padding: 20, borderRadius: 22, backgroundColor: C.ink, transform: [{ rotate: '-1deg' }], boxShadow: `0px 5px 0px ${C.blaze}` },
   shoot: { width: 60, height: 60, borderRadius: 30, backgroundColor: C.blaze, borderWidth: 2, borderColor: C.paper, alignItems: 'center', justifyContent: 'center' },
 });
