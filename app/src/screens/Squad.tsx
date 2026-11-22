@@ -55,6 +55,9 @@ export default function Squad() {
   if (!squad.session) return <Start />;
   if (!squad.room) return <Connecting />;
   const r = squad.room;
+  const midGame = r.phase === 'countdown' || r.phase === 'hunting' || r.phase === 'reveal';
+  // Bingo's header makes room for the X beside it; the other screens get a strip above them
+  const besideX = r.phase === 'hunting' && !!r.bingo;
   const screen =
     r.phase === 'lobby' ? (
       <Lobby room={r} />
@@ -70,10 +73,11 @@ export default function Squad() {
       <Results room={r} />
     );
   return (
-    <View style={{ flex: 1 }}>
+    // mid-game the screen sits below its own strip for the X, so the X never covers the game's header
+    <View style={{ flex: 1, paddingTop: midGame && !besideX ? 52 : 0 }}>
       {screen}
-      {(r.phase === 'countdown' || r.phase === 'hunting' || r.phase === 'reveal') && (
-        <View style={[styles.quit, { top: insets.top + 12 }]}>
+      {midGame && (
+        <View style={[styles.quit, { top: insets.top + (besideX ? 10 : 6) }]}>
           <IconButton
             icon="x"
             label={r.solo ? 'End run' : 'Leave squad'}

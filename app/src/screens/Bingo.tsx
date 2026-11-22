@@ -71,7 +71,8 @@ export function BingoHunt({ room }: { room: RoomView }) {
   return (
     <Screen>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-        <View style={{ gap: 2 }}>
+        {/* leaves room on the left for the squad's leave X */}
+        <View style={{ gap: 2, marginLeft: 52 }}>
           <Label>Bingo</Label>
           <T style={{ fontFamily: F.bodyBold }}>
             {mine.size} of 9 · {myLines} {myLines === 1 ? 'line' : 'lines'}
