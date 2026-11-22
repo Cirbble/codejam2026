@@ -1,12 +1,15 @@
 import { Feather } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, Share, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { Card, CardSet, fetchCollection, peekCollection, peekSets, rarityLine, SITE } from '../api';
+import { Card, CardSet, fetchCollection, peekCollection, peekSets, SITE } from '../api';
 import { shareText } from '../share';
-import { EmptySlot, GameCard } from '../components/GameCard';
+import { CARD_RATIO, EmptySlot, GameCard } from '../components/GameCard';
+import { RarityMeter, SkyText } from '../components/RarityMeter';
+
+const HEAD = { fontFamily: F.display, fontSize: 30, lineHeight: 32, letterSpacing: -0.6 };
 import { Bar, Button, H, Mono, Screen, T, tap } from '../components/ui';
 import { useNav } from '../nav';
-import { C, F, Tier, TIER_ORDER, TIERS, altitude, isNight } from '../theme';
+import { C, F, Tier, TIER_ORDER, TIERS } from '../theme';
 
 export function Collection() {
   const nav = useNav();
@@ -45,7 +48,7 @@ export function Collection() {
   const cw = (Math.min(width, 520) - 40 - 14) / 2;
 
   return (
-    <Screen zone="ridge">
+    <Screen>
       <Bar onBack={nav.back} title="Cards" right={<Mono style={{ width: 44, textAlign: 'right', color: C.ink, fontSize: 15 }}>{cards?.length ?? ''}</Mono>} />
       {sets && (
         <View style={styles.tabs}>
@@ -87,8 +90,8 @@ export function Collection() {
                 }}
                 style={[styles.filter, { borderColor: TIERS[t].color }, on && { backgroundColor: TIERS[t].color }]}
               >
-                <Text style={{ fontFamily: F.mono, fontSize: 13, color: on ? C.white : TIERS[t].color }}>{counts[t]}</Text>
-                <Text style={{ fontFamily: F.bodyBold, fontSize: 12, color: on ? C.white : C.ink }}>{TIERS[t].name}</Text>
+                <Text style={{ fontFamily: F.mono, fontSize: 14, color: on ? C.white : TIERS[t].text }}>{counts[t]}</Text>
+                <Text style={{ fontFamily: F.bodyBold, fontSize: 14, color: on ? C.white : C.ink }}>{TIERS[t].name}</Text>
               </Pressable>
             );
           })}
@@ -140,16 +143,14 @@ function SetList({ sets, onCard }: { sets: CardSet[]; onCard: (c: Card) => void 
   const { width } = useWindowDimensions();
   // done sets last, then the closest to done first
   const order = [...sets].sort((a, b) => Number(a.done) - Number(b.done) || b.have / b.slots.length - a.have / a.slots.length);
-  const tw = Math.min(64, (Math.min(width, 520) - 40 - 28 - 8 * 5) / 6);
+  // three slots a row, big enough that every name reads whole
+  const tw = Math.floor((Math.min(width, 520) - 40 - 28 - 4 - 12 * 2) / 3) - 1; // screen gutters, set padding + border, gaps
   return (
     <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
       {order.map((s) => (
         <View key={s.id} style={[styles.set, s.done && { backgroundColor: C.card, borderColor: C.blaze }]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <View style={{ flex: 1 }}>
-              <T style={{ fontFamily: F.bodyBold, fontSize: 17 }}>{s.name}</T>
-              <Mono>{s.blurb}</Mono>
-            </View>
+            <T style={{ flex: 1, fontFamily: F.bodyBold, fontSize: 18 }}>{s.name}</T>
             {s.done ? (
               <View style={styles.doneBadge}>
                 <Feather name="award" size={14} color={C.white} />
@@ -161,11 +162,11 @@ function SetList({ sets, onCard }: { sets: CardSet[]; onCard: (c: Card) => void 
               </Text>
             )}
           </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
             {s.slots.map((slot) => (
-              <View key={slot.name} style={{ width: tw, gap: 3, alignItems: 'center' }}>
+              <View key={slot.name} style={{ width: tw, gap: 5, alignItems: 'center' }}>
                 {slot.card ? <GameCard card={slot.card} width={tw} flat live={false} onPress={() => onCard(slot.card!)} /> : <EmptySlot width={tw} />}
-                <Text numberOfLines={2} style={{ fontFamily: F.bodyMid, fontSize: 11, lineHeight: 13, textAlign: 'center', color: slot.card ? C.ink : C.inkSoft }}>
+                <Text numberOfLines={2} style={{ fontFamily: F.bodyBold, fontSize: 14, lineHeight: 17, textAlign: 'center', color: C.ink, opacity: slot.card ? 1 : 0.75 }}>
                   {slot.name}
                 </Text>
               </View>
@@ -181,29 +182,29 @@ export function CardView({ card }: { card: Card }) {
   const [copied, setCopied] = useState(false);
   const nav = useNav();
   const { width } = useWindowDimensions();
-  const cw = Math.min(width - 56, 340);
+  // the card takes what the stage has left after the tier line, meter and date, so nothing overlaps on short phones
+  const [stageH, setStageH] = useState(0);
+  const [metaH, setMetaH] = useState(0);
+  const byHeight = stageH && metaH ? (stageH - metaH - 22) / CARD_RATIO : Infinity;
+  const cw = Math.max(120, Math.min(width - 56, 340, byHeight));
   const t = TIERS[card.tier];
   const when = new Date(card.at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
-  // a card is shown on the sky of the altitude it reached
-  const night = isNight(t.zone);
   return (
-    <Screen zone={t.zone}>
-      <Bar onBack={nav.back} light={night} />
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 22 }}>
+    <Screen>
+      <Bar onBack={nav.back} />
+      <View style={{ flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'center', gap: 22, paddingBottom: 16 }} onLayout={(e) => setStageH(e.nativeEvent.layout.height - 16)}>
         <GameCard card={card} width={cw} />
-        <View style={{ alignItems: 'center', gap: 8, paddingHorizontal: 12 }}>
+        <View style={{ alignItems: 'center', gap: 8, paddingHorizontal: 12 }} onLayout={(e) => setMetaH(e.nativeEvent.layout.height)}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
-            <H size={32} style={[{ color: night ? t.glow : t.text }, night && { textShadowColor: 'rgba(255,214,120,0.55)', textShadowRadius: 16 }]}>
+            <SkyText style={HEAD} dayColor={t.text} nightColor={t.frame}>
               {t.name}
-            </H>
-            <H size={32} style={{ color: night ? C.white : C.ink }}>+{card.points}</H>
+            </SkyText>
+            <SkyText style={HEAD}>+{card.points}</SkyText>
           </View>
-          <T style={{ fontFamily: F.bodyBold, fontSize: 17, textAlign: 'center', color: night ? '#E6E1FA' : C.ink }}>
-            {rarityLine(card)}
-          </T>
-          <Mono style={{ color: night ? '#C9C3EC' : C.inkSoft }}>
-            {when} · {card.mode === 'daily' ? 'Daily' : 'Squad'} · +{altitude(card.points)}
-          </Mono>
+          <RarityMeter card={card} width={Math.min(width - 56, 300)} delay={250} climb quick />
+          <SkyText style={{ fontFamily: F.mono, fontSize: 14, textAlign: 'center' }} dayColor={C.inkSoft} nightColor={C.paperDeep}>
+            {when} · {card.mode === 'daily' ? 'Daily' : 'Squad'}
+          </SkyText>
         </View>
       </View>
       <Button
@@ -221,11 +222,11 @@ export function CardView({ card }: { card: Card }) {
 
 const styles = StyleSheet.create({
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  tabs: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass, marginBottom: 14 },
+  tabs: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 999, borderWidth: 2, borderColor: C.ink, marginBottom: 14, backgroundColor: 'rgba(248,250,245,0.95)' },
   tab: { flex: 1, height: 38, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  set: { gap: 12, padding: 14, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass, boxShadow: '0px 10px 26px rgba(20,30,70,0.14)' },
+  set: { gap: 12, padding: 14, borderRadius: 18, borderWidth: 2, borderColor: C.line, backgroundColor: 'rgba(248,250,245,0.9)' },
   doneBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 30, paddingHorizontal: 10, borderRadius: 999, backgroundColor: C.blaze },
-  filter: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 12, borderRadius: 999, borderWidth: 2 },
+  filter: { flexDirection: 'row', alignItems: 'center', gap: 7, height: 42, paddingHorizontal: 14, borderRadius: 999, borderWidth: 2, backgroundColor: 'rgba(248,250,245,0.95)' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   count: { position: 'absolute', top: 40, right: 14, minWidth: 30, height: 26, paddingHorizontal: 7, borderRadius: 13, backgroundColor: C.ink, borderWidth: 2, borderColor: C.paper, alignItems: 'center', justifyContent: 'center' },
 });

@@ -4,8 +4,8 @@ A photo game you play outside. A prompt names a kind of thing, like "something r
 
 | | |
 |---|---|
-| Live | https://rarefind-production.up.railway.app |
-| Play in a browser | https://rarefind-production.up.railway.app/play/ |
+| Live | https://brillion.up.railway.app |
+| Play in a browser | https://brillion.up.railway.app/play/ |
 | Code | `server/` Node + TypeScript, `app/` Expo SDK 58 (iOS, Android, web) |
 
 ## How rarity works
@@ -35,7 +35,7 @@ The AI decides while there is little data; as finds come in, the crowd count ble
 - **Collection sets.** Themed groups of prompts (Rainbow, Shapes, On wheels, one card of every tier, and more) shown in the collection's Sets tab. A find that completes a set says so.
 - **Bingo** (squad option). One 3×3 card of nine prompts, all open at once, against a 5-minute clock (3 minutes indoors). Each square takes one find, and a find's points only count once it is part of a completed row, column or diagonal. Every line you complete is worth +50 more, and the first line in the squad gets +100 more.
 
-- **Quick play.** One player, three 60-second indoor rounds that start right away, with the same three prompts for every team that day. The score goes on the team board: https://rarefind-production.up.railway.app/board.html (QR code on screen, or `/q`). Only a team's best of its first 3 runs counts. Each run races a ghost of the day's best run: a bar under the timer shows when the leading team found each item.
+- **Quick play.** One player, three 60-second indoor rounds that start right away, with the same three prompts for every team that day. The score goes on the team board: https://brillion.up.railway.app/board.html (QR code on screen, or `/q`). Only a team's best of its first 3 runs counts. Each run races a ghost of the day's best run: a bar under the timer shows when the leading team found each item.
 
 Every mode has a short how-to sheet that opens the first time you play it.
 

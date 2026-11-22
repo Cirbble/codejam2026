@@ -33,11 +33,12 @@ export function scoreSolo(aiRarity: number): { rarity: number; tier: Tier; point
   return { rarity, tier, points: TIER_POINTS[tier] };
 }
 
+/** Cut-offs sit below the judge rubric's bands on purpose: the model rarely uses its top band (its usual "excellent" is 82), so One of One starts at 84. */
 export function tierFor(rarity: number, firstOfKind = false, aiRarity = 100): Tier {
-  if ((rarity >= 97 || firstOfKind) && aiRarity >= ONE_MIN_AI) return 'one';
-  if (rarity >= 85) return 'epic';
-  if (rarity >= 65) return 'rare';
-  if (rarity >= 40) return 'uncommon';
+  if ((rarity >= 84 || firstOfKind) && aiRarity >= ONE_MIN_AI) return 'one';
+  if (rarity >= 78) return 'epic';
+  if (rarity >= 62) return 'rare';
+  if (rarity >= 38) return 'uncommon';
   return 'common';
 }
 

@@ -91,6 +91,11 @@ const squadFind = (c: Client, image: string, submissionId = hex(8)) =>
 
 // ---------------- basics ----------------
 check((await api('/health')).json?.ok === true, 'health');
+{
+  const t = await api('/api/today');
+  const d = await api(`/api/daily?device=${hex(16)}`);
+  check(t.json?.day === d.json?.day && t.json?.prompts?.length === 5 && JSON.stringify(t.json.prompts) === JSON.stringify(d.json.prompts), `GET /api/today: ${t.json?.day}, 5 prompts, same as daily`);
+}
 check((await fetch(BASE + '/api/stats')).status === 404 && (await fetch(BASE + '/api/stats?token=nope')).status === 404, 'stats hidden without the token');
 for (const f of ['red_fire_hydrant.jpg', 'laptop_screen.jpg']) if (!existsSync(join(IMG, f))) throw new Error(`missing ${f} in ${IMG}`);
 const hydrant = photo('red_fire_hydrant.jpg');
@@ -266,8 +271,14 @@ b.ws.close();
   const again3 = await connect({ t: 'create', name: 'Solo', quick: true, solo: true, team: teamName, op: hex(8) }, s.device).catch((e) => e as Error);
   check(!(again3 instanceof Error) && again3.code !== s.code, `"Play again" right after the end starts a new run (${again3 instanceof Error ? again3.message : again3.code})`);
   if (!(again3 instanceof Error)) {
-    sendWs(again3, { t: 'leave' });
-    await sleep(300);
+    // the phone switches teams mid-run: the old run is finalized as abandoned and a new one starts
+    const other = await connect({ t: 'create', name: 'Solo', quick: true, solo: true, team: `${teamName} B`, op: hex(8) }, s.device).catch((e) => e as Error);
+    check(!(other instanceof Error) && other.code !== again3.code, `team switch starts a new run (${other instanceof Error ? other.message : other.code})`);
+    if (!(other instanceof Error)) {
+      sendWs(other, { t: 'leave' });
+      await sleep(300);
+      other.ws.close();
+    }
     again3.ws.close();
     if (!PROD) {
       const b2 = await api('/api/board');

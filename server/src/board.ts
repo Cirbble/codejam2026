@@ -29,7 +29,7 @@ export const BOARD_TOP = 50;
 export const COUNTED_RUNS = 3;
 const devHash = (device: string | undefined) => (device ? createHash('sha1').update(device).digest('hex').slice(0, 16) : 'unknown');
 /** Test teams (the e2e uses "E2E ..." names) never show on the board. */
-const isTestTeam = (display: string) => /^e2e /i.test(display);
+const isTestTeam = (display: string) => /^(e2e |qa table)/i.test(display);
 const MAX_RUNS_KEPT = 5000;
 const FILE = join(DATA_DIR, 'board.json');
 

@@ -109,6 +109,11 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
         setRoom(m.room);
       } else if (m.t === 'error') {
         setError(m.message || 'Something went wrong');
+        // the server answered: its message stands (the no-reply timeout must not replace it)
+        if (!sessionRef.current && ackTimer.current) {
+          clearTimeout(ackTimer.current);
+          ackTimer.current = null;
+        }
         if (m.code === 'no_room' || m.code === 'kicked' || m.code === 'full' || m.code === 'in_progress') {
           clearReminders();
           want.current = false;
@@ -141,6 +146,26 @@ export function SquadProvider({ children }: { children: React.ReactNode }) {
       }
     }, 3000);
     return () => clearInterval(id);
+  }, [open]);
+
+  // back from a locked phone or a hidden tab, the old socket is usually dead: reconnect now instead of waiting
+  // for the watchdog, and start the retry backoff fresh
+  useEffect(() => {
+    const wake = () => {
+      if (!want.current || !sessionRef.current) return;
+      const st = ws.current?.readyState;
+      if (st !== WebSocket.OPEN || Date.now() - lastMsg.current > 5_000) {
+        attempts.current = 0;
+        open();
+      }
+    };
+    const sub = AppState.addEventListener('change', (st) => st === 'active' && wake());
+    const onVis = () => typeof document !== 'undefined' && document.visibilityState === 'visible' && wake();
+    if (Platform.OS === 'web' && typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
+    return () => {
+      sub.remove();
+      if (Platform.OS === 'web' && typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVis);
+    };
   }, [open]);
 
   // finish any leave the server hasn't confirmed: on launch and whenever the app comes back

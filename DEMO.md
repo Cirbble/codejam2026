@@ -6,7 +6,7 @@
 - something round
 
 **Setup**
-- Two phones with the app installed, or https://rarefind-production.up.railway.app/play/ open on a laptop.
+- Two phones with the app installed, or https://brillion.up.railway.app/play/ open on a laptop.
 
 1. **Home (15 s).** "Five prompts a day, the same for everyone. You photograph something real. The fewer people who found the same thing, the rarer your card."
 2. **Squad (90 s).**
@@ -24,10 +24,10 @@
 
 # Table visits (People's Choice)
 
-1. Put https://rarefind-production.up.railway.app/board.html on a laptop or projector. Its QR code opens Quick play.
+1. Put https://brillion.up.railway.app/board.html on a laptop or projector. Its QR code opens Quick play.
 2. At each table, hand over a phone or have them scan: Quick play, then their team name, then Start.
 3. Three 60-second rounds with things on their table: "something red" first. Their score lands on the board right away.
 4. Ask for the vote while their name is on the board.
 
 Before starting, clear test entries:
-`curl -X POST "https://rarefind-production.up.railway.app/api/board/reset?token=$(cat .secrets/STATS_TOKEN)"`
+`curl -X POST "https://brillion.up.railway.app/api/board/reset?token=$(cat .secrets/STATS_TOKEN)"`

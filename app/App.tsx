@@ -1,5 +1,4 @@
-import { Cinzel_600SemiBold } from '@expo-google-fonts/cinzel';
-import { CormorantGaramond_600SemiBold, CormorantGaramond_700Bold } from '@expo-google-fonts/cormorant-garamond';
+import { BricolageGrotesque_600SemiBold, BricolageGrotesque_800ExtraBold } from '@expo-google-fonts/bricolage-grotesque';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono';
 import { Feather } from '@expo/vector-icons';
@@ -7,8 +6,13 @@ import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import Backdrop from './src/components/Backdrop';
+
+// dev only: /play/?sky=N&bare=1 shows a scene with no app on top, for reviewing the art
+const BARE = __DEV__ && Platform.OS === 'web' && typeof window !== 'undefined' && /[?&]bare=1/.test(window.location.search);
+import { FadeIn } from './src/components/Motion';
 import { NavProvider, useNav } from './src/nav';
 import { Collection, CardView } from './src/screens/Collection';
 import DailyScreen from './src/screens/DailyScreen';
@@ -31,6 +35,16 @@ function SoloGate() {
 }
 
 function Router() {
+  const { route, depth } = useNav();
+  if (route.name === 'shoot') return <Routes />; // camera previews can flicker under a moving view
+  return (
+    <FadeIn key={`${route.name}:${depth}`} style={{ flex: 1 }} dy={8} duration={220} from={0.6}>
+      <Routes />
+    </FadeIn>
+  );
+}
+
+function Routes() {
   const { route } = useNav();
   switch (route.name) {
     case 'daily':
@@ -54,9 +68,8 @@ function Router() {
 
 export default function App() {
   const [ok, err] = useFonts({
-    Cinzel_600SemiBold,
-    CormorantGaramond_600SemiBold,
-    CormorantGaramond_700Bold,
+    BricolageGrotesque_600SemiBold,
+    BricolageGrotesque_800ExtraBold,
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
@@ -67,16 +80,19 @@ export default function App() {
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});
   }, [ready]);
-  if (!ready) return <View style={{ flex: 1, backgroundColor: C.ink }} />;
+  if (!ready) return <View style={{ flex: 1, backgroundColor: C.paper }} />;
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
-      <View style={{ flex: 1, backgroundColor: C.ink }}>
+      <View style={{ flex: 1, backgroundColor: C.paper }}>
+        <Backdrop />
+        {!BARE && (
         <SquadProvider>
           <NavProvider>
             <Router />
           </NavProvider>
         </SquadProvider>
+        )}
       </View>
     </SafeAreaProvider>
   );

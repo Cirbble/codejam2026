@@ -8,7 +8,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "backgroundColor": "#1A2140",
+    "backgroundColor": "#E9EDE5",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.benjamingurevitch.rarefind",
@@ -23,7 +23,7 @@
     "android": {
       "package": "com.benjamingurevitch.rarefind",
       "adaptiveIcon": {
-        "backgroundColor": "#1A2140",
+        "backgroundColor": "#12150F",
         "foregroundImage": "./assets/adaptive-icon.png"
       },
       "permissions": [
@@ -36,8 +36,8 @@
     "web": {
       "favicon": "./assets/favicon.png",
       "name": "Brillion",
-      "backgroundColor": "#1A2140",
-      "themeColor": "#1A2140"
+      "backgroundColor": "#E9EDE5",
+      "themeColor": "#E9EDE5"
     },
     "plugins": [
       "expo-font",
@@ -46,7 +46,7 @@
         {
           "image": "./assets/splash-icon.png",
           "imageWidth": 180,
-          "backgroundColor": "#1A2140"
+          "backgroundColor": "#E9EDE5"
         }
       ],
       "expo-status-bar",
@@ -62,7 +62,7 @@
       [
         "expo-notifications",
         {
-          "color": "#B8892A"
+          "color": "#F2542D"
         }
       ]
     ],

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Rarefind</title>
+<title>Brillion</title>
 <meta name="description" content="A photo game played outside. The fewer people who found the same thing, the rarer your card.">
 <link rel="icon" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,7 +13,7 @@
 /* Field binder: daylight paper, ink structure, cards carry the colour. Hero = a hand of five cards climbing the tiers. */
 :root {
   --paper: #E9EDE5; --paper-deep: #DDE2D8; --card: #FAFBF7; --ink: #12150F; --ink-soft: #454B41; --faint: #7D8577; --line: #C3C9BC; --blaze: #D23C15;
-  --common: #7F877A; --common-f: #D3D8CD; --uncommon: #23914A; --uncommon-f: #BFE3C8; --rare: #2563EB; --rare-f: #BCD0FA; --epic: #8B35E0; --epic-f: #DCC4F7; --one: #E0457B;
+  --common: #7F877A; --common-f: #D3D8CD; --uncommon: #1C7F3F; --uncommon-f: #BFE3C8; --rare: #2563EB; --rare-f: #BCD0FA; --epic: #8B35E0; --epic-f: #DCC4F7; --one: #C93468;
   --holo: linear-gradient(135deg, #FF6FB1, #FFD45C 28%, #5CE6C8 55%, #6E8BFF 80%, #C77DFF);
   --display: 'Bricolage Grotesque', 'Arial Black', system-ui, sans-serif; --body: 'Inter', system-ui, -apple-system, sans-serif; --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
   color-scheme: light;
@@ -37,7 +37,7 @@ header.wrap { display: flex; align-items: center; justify-content: space-between
 
 .hero { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr); gap: 40px; align-items: center; padding-block: 36px 72px; }
 h1 { font: 800 clamp(48px, 7.2vw, 92px)/0.95 var(--display); letter-spacing: -0.035em; margin: 0 0 22px; text-wrap: balance; }
-h1 em { font-style: normal; filter: saturate(1.15) brightness(0.86); padding: 0 .04em .12em 0; margin-bottom: -.12em; display: inline-block; background: var(--holo); -webkit-background-clip: text; background-clip: text; color: transparent; }
+h1 em { font-style: normal; filter: saturate(1.2) brightness(0.78); padding: 0 .04em .12em 0; margin-bottom: -.12em; display: inline-block; background: var(--holo); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .lede { font-size: 20px; color: var(--ink-soft); max-width: 30ch; margin: 0 0 30px; }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; }
 @media (max-width: 520px) { .cta { display: grid; grid-template-columns: 1fr; } .cta .btn { justify-content: center; } .cta .btn:not(.blaze) { height: 44px; border: 0; text-decoration: underline; text-underline-offset: 4px; background: none; } }
@@ -66,14 +66,16 @@ h1 em { font-style: normal; filter: saturate(1.15) brightness(0.86); padding: 0 
 
 /* ladder */
 .today { background: var(--ink); color: #fff; }
-.today .wrap { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 28px; align-items: center; padding-block: 30px; }
+.today .wrap { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 32px; align-items: center; padding-block: 30px; }
 .today .lbl { font: 600 13px/1.2 var(--body); letter-spacing: .12em; text-transform: uppercase; color: #A9B1A2; }
 .today .lbl b { display: block; font: 800 34px/1 var(--display); letter-spacing: -.02em; text-transform: none; color: #fff; margin-top: 6px; }
-.prompts { display: flex; flex-wrap: wrap; gap: 10px; min-width: 0; }
-.prompts span { font: 700 clamp(15px, 1.25vw, 19px)/1 var(--display); padding: 13px 18px; border-radius: 999px; border: 2px solid #3A4235; background: #1C2018; white-space: nowrap; }
+.prompts { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+@media (min-width: 901px) { .prompts { max-width: 680px; } .prompts span { padding-inline: 12px; } } /* wraps into balanced rows instead of leaving one pill alone */
+.prompts span { font: 700 clamp(13px, 1vw, 16px)/1 var(--display); padding: 11px 14px; border-radius: 999px; border: 2px solid #3A4235; background: #1C2018; white-space: nowrap; }
 .prompts span::first-letter { text-transform: uppercase; }
-.today .btn { justify-content: center; border-color: #fff; color: var(--ink); background: #fff; box-shadow: 0 4px 0 var(--blaze); white-space: nowrap; }
-@media (max-width: 900px) { .today .wrap { grid-template-columns: minmax(0, 1fr); gap: 16px; } .prompts span { white-space: normal; } }
+.today .btn { justify-content: center; border-color: #5A6352; color: #fff; background: transparent; white-space: nowrap; }
+.today .btn:hover { border-color: #fff; }
+@media (max-width: 900px) { .today .wrap { grid-template-columns: minmax(0, 1fr); gap: 14px; padding-block: 24px; } .prompts span { white-space: normal; padding: 9px 12px; } .ladder { padding-block: 44px 64px; } }
 .ladder { padding-block: 64px 80px; }
 .ladder h2 { font: 800 clamp(32px, 4.4vw, 52px)/1 var(--display); letter-spacing: -.03em; margin: 0 0 34px; max-width: 18ch; text-wrap: balance; }
 .tiers { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
@@ -105,17 +107,33 @@ footer.wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-
   .tier .pts { font-size: 22px; }
   .modes { grid-template-columns: minmax(0, 1fr); }
 }
+@media (max-width: 640px) { header .btn.ink { display: none; } .mode { padding: 14px 16px; } .mode strong { font-size: 20px; } }
 @media (max-width: 420px) {
   .hand { height: 290px; } .card { --w: 150px; }
   .c1 { --x: -96px; } .c5 { --x: 96px; }
   .card .bot { padding: 6px 7px 8px; gap: 5px; } .card .ph { margin: 0 6px; } .card { padding: 8px; }
 }
+/* motion: the hand is dealt in, the rainbow word drifts, today's prompts rise in */
+@keyframes deal { from { opacity: 0; transform: translate(-50%, -50%) translate(0px, 140px) rotate(0deg); } to { opacity: 1; transform: translate(-50%, -50%) translate(var(--x), var(--y)) rotate(var(--r)); } }
+.card { animation: deal .8s cubic-bezier(.2,.9,.25,1.15) backwards; }
+.c1 { animation-delay: .05s; } .c2 { animation-delay: .13s; } .c3 { animation-delay: .21s; } .c4 { animation-delay: .29s; } .c5 { animation-delay: .37s; }
+@keyframes drift { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+h1 em { background-size: 220% 100%; animation: drift 2.4s ease-in-out infinite alternate; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.prompts span { animation: rise .5s ease-out both; }
+.prompts span:nth-child(2) { animation-delay: .08s; } .prompts span:nth-child(3) { animation-delay: .16s; } .prompts span:nth-child(4) { animation-delay: .24s; } .prompts span:nth-child(5) { animation-delay: .32s; }
+@media (prefers-reduced-motion: reduce) { .card, h1 em, .prompts span { animation: none !important; } }
 @media (prefers-reduced-motion: reduce) { .card.foil::after { animation: none; display: none; } .card, .btn { transition: none; } }
+
+/* the contour map behind everything drifts slowly, and climbs a little as you scroll */
+body::before { content: ""; position: fixed; inset: -12%; z-index: -1; pointer-events: none; background: url(/contours.svg) center / cover no-repeat; animation: topo 60s ease-in-out infinite alternate; transform: translate3d(0, calc(var(--climb, 0) * -40px), 0) scale(calc(1 + var(--climb, 0) * .12)); }
+@keyframes topo { 0% { translate: -2.5% -1%; rotate: -1deg; } 50% { translate: 2% 1.5%; rotate: .6deg; } 100% { translate: -1% 2.5%; rotate: 1.2deg; } }
+@media (prefers-reduced-motion: reduce) { body::before { animation: none; transform: none; } }
 </style>
 </head>
 <body>
 <header class="wrap">
-  <a class="mark" href="/" aria-label="Rarefind home">rarefind<i></i></a>
+  <a class="mark" href="/" aria-label="Brillion home">brillion<i></i></a>
   <span style="display:flex;gap:10px"><a class="btn small" href="/board.html">Team board</a><a class="btn small ink" href="/play/">Play</a></span>
 </header>
 
@@ -165,14 +183,14 @@ footer.wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-
 </main>
 
 <footer class="wrap">
-  <span>Rarefind · CodeJam 16</span>
+  <span>Brillion · CodeJam 16</span>
   <span>Cards above are examples</span>
 </footer>
 
 <script>
-  // today's five prompts, live (read-only: a fixed placeholder device never creates progress)
-  fetch('/api/daily?device=00000000000000000000000000000000').then((r) => (r.ok ? r.json() : null)).then((d) => {
-    if (!d) return;
+  // today's five prompts, live
+  fetch('/api/today').then((r) => (r.ok ? r.json() : null)).then((d) => {
+    if (!d || !d.prompts?.length) { document.querySelector('.today').hidden = true; return; }
     const box = document.getElementById('prompts');
     d.prompts.forEach((p) => { const el = document.createElement('span'); el.textContent = p.text; box.appendChild(el); });
     const date = new Date(d.day + 'T12:00:00');
@@ -186,6 +204,15 @@ footer.wrap { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-
     if (l.ios) add(l.ios, 'iPhone');
     if (l.android) add(l.android, 'Android');
   }).catch(() => {});
+</script>
+
+<script>
+  // scrolling down the page climbs the contour map a little
+  (() => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    let raf = 0;
+    addEventListener('scroll', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => document.body.style.setProperty('--climb', Math.min(1, scrollY / Math.max(1, document.body.scrollHeight - innerHeight)).toFixed(3))); }, { passive: true });
+  })();
 </script>
 </body>
 </html>

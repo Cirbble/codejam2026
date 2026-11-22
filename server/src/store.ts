@@ -5,6 +5,30 @@ import { dict, toDict } from './dict.js';
 
 export const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data');
 export const PHOTO_DIR = join(DATA_DIR, 'p');
+
+/**
+ * One-time fresh start for judging: on the first production boot with this id, everything players made (cards, photos,
+ * daily progress, crowd counts, the team board, squad rooms) moves into DATA_DIR/archive-<id>/ instead of being deleted,
+ * so it can be moved back. The judge cache stays. A marker file keeps later restarts from archiving again.
+ */
+const RESET_ID = 'judging-2026-11-22';
+export function archivePlayerData(dir: string, id: string): string | null {
+  const marker = join(dir, `reset-${id}.done`);
+  if (!existsSync(dir) || existsSync(marker)) return null;
+  const dest = join(dir, `archive-${id}`);
+  mkdirSync(dest, { recursive: true });
+  // the legacy per-collection files too: without finds.json the store would migrate them back in
+  for (const n of ['finds.json', 'cards.json', 'counts.json', 'counted.json', 'devices.json', 'daily.json', 'board.json', 'rooms.json', 'p']) {
+    const from = join(dir, n);
+    if (existsSync(from)) renameSync(from, join(dest, n));
+  }
+  writeFileSync(marker, new Date().toISOString());
+  return dest;
+}
+if (process.env.RAILWAY_ENVIRONMENT_NAME === 'production' || process.env.RESET_PLAYER_DATA === RESET_ID) {
+  const moved = archivePlayerData(DATA_DIR, RESET_ID);
+  if (moved) console.log('[store] fresh start: player data archived to', moved);
+}
 mkdirSync(PHOTO_DIR, { recursive: true });
 
 /** temp file + rename: the target is either the old or the new document, never half-written. */

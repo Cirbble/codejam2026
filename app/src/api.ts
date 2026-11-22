@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import Constants from 'expo-constants';
@@ -105,7 +106,7 @@ export function bingoLineCells(marked: boolean[]): Set<number> {
   for (const line of BINGO_LINES) if (line.every((i) => marked[i])) line.forEach((i) => out.add(i));
   return out;
 }
-export const SITE = 'https://rarefind-production.up.railway.app';
+export const SITE = 'https://brillion.up.railway.app';
 export const inviteLink = (code: string) => `${SITE}/play/?join=${code}`;
 
 /** Code from an invite link (?join=CODE on the web, rarefind://join/CODE in the app). */
@@ -180,7 +181,8 @@ export async function fetchCollection(): Promise<Card[]> {
   const c = r.cards;
   collectionMem = c;
   setsMem = r.sets ?? null;
-  prefetchCards(c.slice(0, 24), true);
+  prefetchCards(c, true);
+  prefetchCards(c.slice(0, 12));
   return c;
 }
 
@@ -220,10 +222,14 @@ export async function submitFind(
 export const cap = (s?: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
 
 /** One concrete sentence about how rare a card is, used under cards. */
-export function rarityLine(c: { title: string; sameCount: number; totalCount: number }) {
-  const what = c.title.charAt(0).toLowerCase() + c.title.slice(1);
-  if (c.sameCount <= 1) return `Only you found a ${what} · ${c.totalCount} ${c.totalCount === 1 ? 'find' : 'finds'} for this prompt`;
-  return `${c.sameCount} of ${c.totalCount} finds were a ${what}`;
+/** Below this many finds for a prompt, rarity comes almost entirely from the AI, so the crowd count isn't shown. */
+export const CROWD_MIN = 10;
+export const crowdShown = (c: { solo?: boolean; totalCount: number }) => !c.solo && c.totalCount >= CROWD_MIN;
+
+export function rarityLine(c: { title: string; sameCount: number; totalCount: number; solo?: boolean }) {
+  if (!crowdShown(c)) return 'Scored by how unusual this find is for the prompt';
+  if (c.sameCount <= 1) return `Nobody else found this · ${c.totalCount} finds for this prompt`;
+  return `${c.sameCount} of ${c.totalCount} finds for this prompt were the same thing`;
 }
 
 export async function fetchBoard(): Promise<BoardRow[]> {
@@ -231,7 +237,22 @@ export async function fetchBoard(): Promise<BoardRow[]> {
 }
 
 /** Warm the image cache so cards never appear before their photo. */
+const warm = new Map<string, unknown>();
 export function prefetchCards(cards: Card[], small = false) {
   const urls = cards.map((c) => photoUrl(c, small));
-  if (urls.length) Image.prefetch(urls, 'memory-disk').catch(() => {});
+  if (!urls.length) return;
+  // on the web, load each photo into a real <img> and keep it: the page's list of available images then hands the
+  // decoded photo to any later <img> with that URL straight away, so cards never show an empty frame first
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    for (const u of urls) {
+      if (warm.has(u)) continue;
+      const img = new window.Image();
+      img.decoding = 'async';
+      img.src = u;
+      img.decode?.().catch(() => {});
+      warm.set(u, img);
+    }
+    return;
+  }
+  Image.prefetch(urls, 'memory-disk').catch(() => {});
 }

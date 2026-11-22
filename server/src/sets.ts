@@ -20,7 +20,7 @@ export const SETS: SetDef[] = [
   { id: 'signs', name: 'Read the street', blurb: 'Signs, numbers and arrows', slots: [p('Number', 'o-sign-number', 'i-number'), p('Arrow', 'o-arrow'), p('Warning', 'o-warning'), p('Food word', 'o-food-word')] },
   { id: 'time', name: 'Time travel', blurb: 'Old, new and passing', slots: [p('Older than you', 'o-older', 'i-older'), p('Brand new', 'o-new'), p('Tells time', 'o-clock'), p('Broken', 'o-broken'), p('The season', 'o-season')] },
   { id: 'wheels', name: 'On wheels', blurb: 'Things that roll', slots: [p('Wheels', 'o-wheels'), p('Rideable', 'o-ride'), p('Parked', 'o-parked')] },
-  { id: 'light', name: 'Light and shade', blurb: 'Glow, shine and shadow', slots: [p('Makes light', 'o-light', 'i-noise'), p('Reflection', 'o-reflection'), p('Shadow', 'o-shadow')] },
+  { id: 'light', name: 'Light and shade', blurb: 'Glow, shine and shadow', slots: [p('Makes light', 'o-light', 'i-noise', 'j-light'), p('Reflection', 'o-reflection'), p('Shadow', 'o-shadow')] },
   { id: 'tiers', name: 'Full spectrum', blurb: 'One card of every tier', slots: [t('Common', 'common'), t('Uncommon', 'uncommon'), t('Rare', 'rare'), t('Epic', 'epic'), t('One of One', 'one')] },
 ];
 

@@ -230,7 +230,8 @@ test('rarity math: AI decides at first, the crowd weighs in up to half', () => {
   // first-ever find of a label with ai >= 80 -> One of One
   assert.equal(scoreFind(80, 1, 1, true).tier, 'one');
   assert.equal(scoreFind(80, 1, 1, true).points, 100);
-  assert.equal(scoreFind(79, 1, 1, true).tier, 'rare');
+  assert.equal(scoreFind(79, 1, 1, true).tier, 'epic');
+  assert.equal(scoreFind(77, 1, 1, true).tier, 'rare');
   // total 11 -> w = 0.4; crowd = 100*(1-5/11) = 54.5; 0.4*54.5 + 0.6*90 = 75.8 -> 76
   assert.equal(scoreFind(90, 5, 11, false).rarity, 76);
   // crowd weight is capped at 0.5: total 26, crowd 50, ai 0 -> 25 (not 50)
@@ -245,8 +246,8 @@ test('rarity math: AI decides at first, the crowd weighs in up to half', () => {
 
 test('tiers and points at every boundary; One of One needs aiRarity >= 60', () => {
   const cases: [number, string, number][] = [
-    [0, 'common', 10], [39, 'common', 10], [40, 'uncommon', 30], [64, 'uncommon', 30], [65, 'rare', 60],
-    [84, 'rare', 60], [85, 'epic', 85], [96, 'epic', 85], [97, 'one', 100], [100, 'one', 100],
+    [0, 'common', 10], [37, 'common', 10], [38, 'uncommon', 30], [61, 'uncommon', 30], [62, 'rare', 60],
+    [77, 'rare', 60], [78, 'epic', 85], [83, 'epic', 85], [84, 'one', 100], [100, 'one', 100],
   ];
   for (const [r, tier] of cases) assert.equal(tierFor(r), tier, `rarity ${r}`);
   assert.equal(tierFor(98, false, 59), 'epic', 'high rarity, low AI rarity: not One of One');
@@ -256,8 +257,8 @@ test('tiers and points at every boundary; One of One needs aiRarity >= 60', () =
   assert.equal(scoreFind(85, 1, 500, true).tier, 'one');
   assert.equal(scoreFind(50, 1, 500, false).rarity, 75);
   // a deduplicated find (re-submitted photo / same device) never gets the first-ever bonus, even with sameCount 1
-  assert.equal(scoreFind(85, 1, 1, false).tier, 'epic');
-  assert.equal(scoreFind(85, 1, 1, false).points, 85);
+  assert.equal(scoreFind(82, 1, 1, false).tier, 'epic');
+  assert.equal(scoreFind(82, 1, 1, false).points, 85);
 });
 
 test('label normalization', () => {
@@ -694,11 +695,11 @@ test('ended solo view says whether the run counted and how many counted runs are
 
 test('solo scoring uses aiRarity alone: same find, same points at any table', () => {
   assert.deepEqual(scoreSolo(42), { rarity: 42, tier: 'uncommon', points: 30 });
-  assert.deepEqual(scoreSolo(39), { rarity: 39, tier: 'common', points: 10 });
+  assert.deepEqual(scoreSolo(37), { rarity: 37, tier: 'common', points: 10 });
   assert.deepEqual(scoreSolo(65), { rarity: 65, tier: 'rare', points: 60 });
-  assert.deepEqual(scoreSolo(96), { rarity: 96, tier: 'epic', points: 85 });
+  assert.deepEqual(scoreSolo(83), { rarity: 83, tier: 'epic', points: 85 });
   assert.deepEqual(scoreSolo(97), { rarity: 97, tier: 'one', points: 100 });
-  assert.equal(scoreSolo(85).points, 85, 'no first-ever bonus (scoreFind would give 100 for a first find at 85)');
+  assert.equal(scoreSolo(82).points, 85, 'no first-ever bonus (scoreFind would give 100 for a first find at 85)');
   assert.equal(scoreFind(85, 1, 1, true).points, 100);
 });
 
@@ -1192,4 +1193,96 @@ test('a late upload refused for a transient reason can retry with the same submi
   adv2(27_000);
   assert.equal(r2.round, 2, 'grace over: the reveal let go and the next prompt started');
   assert.equal(r2.lateAdmit.size, 0);
+});
+
+test('host skip ends the hunt early: the shutter window is measured against the actual end, so the upload counts', () => {
+  const { room, ps, advance } = setup(false, 2);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  advance(30_000); // long before the original deadline
+  const pid = room.prompt!.id;
+  assert.equal(room.markShooting(ps[1].id, pid), true, 'friend presses the shutter');
+  advance(2000);
+  room.skip(ps[0].id); // host: "End round now"
+  assert.equal(room.phase, 'reveal');
+  advance(3000); // the upload lands 3 s after the skip
+  const pre = room.precheck(ps[1].id, 'friend-upload', 'h1');
+  assert.equal(pre.kind, 'ok', 'accepted: pressed 2 s before the actual hunt end');
+  const r = room.settle(ps[1].id, 'friend-upload', 1, { accepted: true }, () => card('pigeon', 'P1', 30, 45, ps[1].id));
+  assert.equal((r.body as any).accepted, true);
+  assert.equal(room.view().reveal!.length, 1);
+});
+
+test('likely playtest cause: an upload refused for a transient reason just before the host skip can retry after it', () => {
+  const { room, ps, advance } = setup(false, 2);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  advance(30_000);
+  const pid = room.prompt!.id;
+  room.markShooting(ps[1].id, pid);
+  // the upload reaches the server during the hunt but is refused for a transient reason (e.g. the 4 s gap after a rejected photo)
+  assert.equal(room.precheck(ps[1].id, 'up', 'h1').kind, 'ok');
+  room.abort(ps[1].id, 'up');
+  advance(1000);
+  room.skip(ps[0].id); // host: "End round now"
+  assert.equal(room.phase, 'reveal');
+  assert.equal(room.latePending(), true, 'the reveal waits for the retry');
+  advance(3000);
+  assert.equal(room.precheck(ps[1].id, 'other-sub', 'h2').kind, 'error', 'only the same submission');
+  const retry = room.precheck(ps[1].id, 'up', 'h1');
+  assert.equal(retry.kind, 'ok', 'the app retry with the same submissionId gets in');
+  const r = room.settle(ps[1].id, 'up', 1, { accepted: true }, () => card('pigeon', 'P1', 30, 45, ps[1].id));
+  assert.equal((r.body as any).accepted, true);
+  // a shooting message that raced the skip still counts
+  advance(REVEAL_MS);
+  const p2 = room.prompt!.id;
+  advance(20_000);
+  room.skip(ps[0].id);
+  advance(500);
+  assert.equal(room.markShooting(ps[0].id, p2), true, 'press landed 0.5 s after the skip');
+  advance(4000);
+  assert.equal(room.precheck(ps[0].id, 'raced', 'h3').kind, 'ok');
+  advance(2000);
+  assert.equal(room.markShooting(ps[1].id, p2), false, 'too late to have raced the skip');
+});
+
+test('restart mid-grace keeps the late-upload state: the retry is still accepted', () => {
+  const { room, ps, advance, clock, now } = setup(false, 2);
+  room.start(ps[0].id);
+  advance(COUNTDOWN_MS);
+  const pid = room.prompt!.id;
+  advance(HUNT_MS - 3000);
+  const v0 = room.saveVersion;
+  room.markShooting(ps[0].id, pid);
+  assert.ok(room.saveVersion > v0, 'a shutter press is snapshotted');
+  advance(3000);
+  advance(2000);
+  assert.equal(room.precheck(ps[0].id, 'slow', 'hS').kind, 'ok', 'late upload admitted');
+  // the server dies while the photo is with the AI: snapshot, 40 s downtime, restore
+  const snap = JSON.parse(JSON.stringify(room.snapshot()));
+  clock.t += 40_000;
+  const back = Room.restore(snap, now, (q) => squadPrompts(q, seeded('test')));
+  assert.equal(back.phase, 'reveal');
+  assert.equal(back.latePending(), true, 'the reveal still waits');
+  assert.equal(back.precheck(ps[0].id, 'other', 'hS').kind, 'error');
+  const retry = back.precheck(ps[0].id, 'slow', 'hS');
+  assert.equal(retry.kind, 'ok', 'the app retry with the same submissionId gets in after the restart');
+  assert.ok((retry as any).receivedAt <= back.huntEndedAt!, 'still counts as before the buzzer');
+  const r = back.settle(ps[0].id, 'slow', 1, { accepted: true }, () => card('bench', 'P0', 30, 50, ps[0].id));
+  assert.equal((r.body as any).accepted, true);
+  // a press that was snapshotted before the deadline still earns its grace after a restart
+  const { room: a, ps: q, advance: adv, clock: c2, now: n2 } = setup(false, 2);
+  a.start(q[0].id);
+  adv(COUNTDOWN_MS);
+  adv(HUNT_MS - 2000);
+  a.markShooting(q[1].id, a.prompt!.id);
+  const s2 = JSON.parse(JSON.stringify(a.snapshot()));
+  c2.t += 60_000;
+  const b = Room.restore(s2, n2, (x) => squadPrompts(x, seeded('test')));
+  for (let i = 0; i < 12; i++) {
+    c2.t += 250;
+    b.tick();
+  }
+  assert.equal(b.phase, 'reveal');
+  assert.equal(b.precheck(q[1].id, 'up', 'h').kind, 'ok');
 });

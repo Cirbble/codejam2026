@@ -1,13 +1,14 @@
 import { Feather } from '@expo/vector-icons';
-import React, { useEffect, useRef } from 'react';
+import { Image } from 'expo-image';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { bingoLineCells, cap, type Card, type Prompt, type RoomView } from '../api';
+import { bingoLineCells, cap, fetchCollection, photoUrl, type Card, type Prompt, type RoomView } from '../api';
 import { EmptySlot, GameCard } from '../components/GameCard';
 import { Avatar, clock, useClock } from '../components/squadBits';
 import { Button, H, Label, Mono, Screen, T, tap } from '../components/ui';
 import { useNav } from '../nav';
 import { useSquad } from '../squad';
-import { C, F } from '../theme';
+import { C, F, TIERS } from '../theme';
 
 // Bingo: one 3x3 card of prompts, all open at once, one clock. A find's points count only once it sits on a
 // completed row/column/diagonal; each line adds a bonus, and the first line in the squad adds a bigger one.
@@ -35,6 +36,29 @@ export function BingoHunt({ room }: { room: RoomView }) {
   const first = bb?.first ?? null;
   const firstName = first === me ? 'You' : room.players.find((p) => p.id === first)?.name;
 
+  // your own finds on your squares (photo and tier), from your collection: the room never sends cards mid-hunt,
+  // so nobody else's tiers leak
+  const [found, setFound] = useState<Record<string, Card>>({});
+  const huntStart = (room.endsAt ?? 0) - span;
+  useEffect(() => {
+    if (!mine.size) return;
+    let live = true;
+    fetchCollection()
+      .then((cs) => {
+        if (!live) return;
+        const out: Record<string, Card> = {};
+        for (const c of cs) {
+          if (c.mode !== 'squad' || !mine.has(c.promptId) || c.at < huntStart - 60_000) continue;
+          if (!out[c.promptId] || c.at > out[c.promptId].at) out[c.promptId] = c;
+        }
+        setFound(out);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [mine.size, huntStart]);
+
   // a buzz when you complete a line
   const prevLines = useRef(myLines);
   useEffect(() => {
@@ -45,7 +69,7 @@ export function BingoHunt({ room }: { room: RoomView }) {
   const open = (p: Prompt) => nav.push({ name: 'shoot', promptId: p.id, promptText: p.text, examples: p.examples, mode: 'squad' });
 
   return (
-    <Screen zone="ridge">
+    <Screen>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <View style={{ gap: 2 }}>
           <Label>Bingo</Label>
@@ -69,12 +93,13 @@ export function BingoHunt({ room }: { room: RoomView }) {
             </T>
           </View>
         ) : (
-          <Mono style={{ textAlign: 'center' }}>Only finds on a full row, column or diagonal score. First line gets +{bb?.firstBonus ?? 100}.</Mono>
+          null
         )}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: GAP, justifyContent: 'center', alignSelf: 'center', width: tw * 3 + GAP * 2 }}>
           {grid.map((p, i) => {
             const done = marked[i];
             const line = onLine.has(i);
+            const card = done ? found[p.id] : undefined;
             return (
               <Pressable
                 key={p.id}
@@ -86,13 +111,27 @@ export function BingoHunt({ room }: { room: RoomView }) {
                   styles.tile,
                   { width: tw, height: Math.round(tw * 1.12) },
                   done && { backgroundColor: line ? C.blaze : C.ink },
+                  done && card && { padding: 0, overflow: 'hidden', borderWidth: line ? 4 : 3, borderColor: line ? C.blaze : TIERS[card.tier].color },
                   pressed && { transform: [{ scale: 0.96 }] },
                 ]}
               >
-                <Text numberOfLines={5} style={{ fontFamily: F.bodyBold, fontSize: tw < 100 ? 13 : 15, lineHeight: tw < 100 ? 16 : 19, color: done ? C.white : C.ink }}>
-                  {cap(p.text)}
-                </Text>
-                <Feather name={done ? 'check-circle' : 'camera'} size={18} color={done ? C.white : C.faint} style={{ alignSelf: 'flex-end' }} />
+                {done && card ? (
+                  <>
+                    <Image source={{ uri: photoUrl(card, true) }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                    <View style={[styles.tierStrip, { backgroundColor: TIERS[card.tier].color }]}>
+                      <Text numberOfLines={1} style={{ fontFamily: F.bodyBold, fontSize: tw < 100 ? 11 : 13, color: C.white }}>
+                        {TIERS[card.tier].name}
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Text numberOfLines={5} style={{ fontFamily: F.bodyBold, fontSize: tw < 100 ? 13 : 15, lineHeight: tw < 100 ? 16 : 19, color: done ? C.white : C.ink }}>
+                      {cap(p.text)}
+                    </Text>
+                    <Feather name={done ? 'check-circle' : 'camera'} size={18} color={done ? C.white : C.faint} style={{ alignSelf: 'flex-end' }} />
+                  </>
+                )}
               </Pressable>
             );
           })}
@@ -152,7 +191,7 @@ export function BingoReveal({ room }: { room: RoomView }) {
   const bb = room.bingoBoard;
   const ranking = [...room.players].sort((a, b) => b.score - a.score);
   return (
-    <Screen zone="ridge">
+    <Screen>
       <View style={{ gap: 4 }}>
         <Label>Time's up</Label>
         <H size={32}>Your bingo card</H>
@@ -184,10 +223,11 @@ export function BingoReveal({ room }: { room: RoomView }) {
 }
 
 const styles = StyleSheet.create({
-  track: { height: 12, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.55)', marginTop: 8, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
-  tile: { borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.card, padding: 10, justifyContent: 'space-between' },
+  track: { height: 12, borderRadius: 999, backgroundColor: C.paperDeep, marginTop: 8, overflow: 'hidden', borderWidth: 2, borderColor: C.ink },
+  tierStrip: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingVertical: 4, paddingHorizontal: 6, alignItems: 'center' },
+  tile: { borderRadius: 16, borderWidth: 2, borderColor: C.ink, backgroundColor: C.card, padding: 10, justifyContent: 'space-between' },
   banner: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, backgroundColor: C.ink },
-  pchip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass },
+  pchip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 12, borderRadius: 999, borderWidth: 2, borderColor: C.ink },
   lineRing: { borderRadius: 18, borderWidth: 3, borderColor: C.blaze, alignItems: 'center', justifyContent: 'center' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 14, borderWidth: 2, borderColor: C.ink },
 });

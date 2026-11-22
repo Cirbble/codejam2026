@@ -26,7 +26,7 @@ export function ImpostorVote({ room }: { room: RoomView }) {
     squad.send({ t: 'vote', target: id });
   };
   return (
-    <Screen zone="ridge">
+    <Screen>
       <View style={{ gap: 4 }}>
         <Label>Round {room.round} · who's the impostor?</Label>
         <H size={30}>{cap(room.prompt?.text)}</H>
@@ -84,7 +84,7 @@ export function ImpostorResult({ room }: { room: RoomView }) {
   if (!res) return null;
   const youWere = res.impostorId === me;
   return (
-    <Screen zone="ridge">
+    <Screen>
       <ScrollView contentContainerStyle={{ gap: 18, paddingBottom: 12 }} showsVerticalScrollIndicator={false}>
         <View style={[styles.verdict, { backgroundColor: res.caught ? C.ink : C.blaze }]}>
           <Label style={{ color: C.paper }}>{res.caught ? 'Caught' : 'Got away'}</Label>
@@ -144,7 +144,7 @@ export function impostorTally(room: RoomView, playerId: string) {
 }
 
 const styles = StyleSheet.create({
-  voteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 44, paddingHorizontal: 10, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass },
+  voteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 44, paddingHorizontal: 10, borderRadius: 14, borderWidth: 2, borderColor: C.ink },
   verdict: { gap: 6, padding: 20, borderRadius: 22 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 14, borderWidth: 2, borderColor: C.line },
 });

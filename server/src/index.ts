@@ -96,6 +96,12 @@ function cardsOf(device: string): Card[] {
   return (byDevice.data[device] ?? []).map((id) => cards.data[id]).filter(Boolean);
 }
 
+app.get('/api/today', (_req, res) => {
+  const day = torontoDay();
+  res.setHeader('cache-control', 'public, max-age=300');
+  res.json({ day, prompts: dailyPrompts(day).map(pub) });
+});
+
 app.get('/api/daily', (req, res) => {
   const device = req.query.device;
   if (!validDevice(device)) return res.status(400).json({ error: 'bad_request', message: 'Missing device.' });
@@ -104,9 +110,11 @@ app.get('/api/daily', (req, res) => {
   const e = dailyEntry(day, device);
   const outCards: Record<string, Card> = {};
   let score = 0;
+  // only today's prompts count (a day whose prompts were swapped keeps its earlier cards in the collection, not in the score)
+  const live = new Set(prompts.map((p) => p.id));
   for (const [pid, cid] of Object.entries(e.cards)) {
     const c = cards.data[cid];
-    if (c) {
+    if (c && live.has(pid)) {
       outCards[pid] = c;
       score += c.points;
     }
@@ -259,7 +267,7 @@ function judgeFailure(error: 'budget' | 'ai_down' | 'ip', ip: string): Reply {
 
 function outcomeOf(j: Judgement) {
   if (j.match) return { accepted: true as const };
-  if (j.screen) return { accepted: false as const, reason: 'screen' as const, verdict: 'Find the real thing.' };
+  if (j.screen) return { accepted: false as const, reason: 'screen' as const, verdict: 'That looks like a screen or a printed picture. Photograph the actual object.' };
   if (j.label === 'unclear') return { accepted: false as const, reason: 'unclear' as const, verdict: j.verdict };
   return { accepted: false as const, reason: 'no_match' as const, verdict: j.verdict };
 }
@@ -646,8 +654,14 @@ function handle(conn: Conn, m: ClientMsg) {
         const live = activeSoloRun(m.device);
         if (live) {
           const me = [...live.players.values()].find((x) => x.device === m.device)!;
-          attach(conn, live, me.id, me.secret);
-          return;
+          if (teamKey(live.team) === teamKey(team)) {
+            attach(conn, live, me.id, me.secret);
+            return;
+          }
+          // switching teams: the old run ends as abandoned (points so far count, its slot stays used)
+          for (const c of conns)
+            if (c.code === live.code && c.playerId === me.id && c !== conn) send(c.ws, { t: 'error', code: 'kicked', message: 'This phone started a run for another team.' });
+          leavePlayer(live, me.id);
         }
         if (windowLimited(soloIpHits, conn.ip, LIMITS.SOLO_PER_IP, 10 * 60_000)) throw new WsError('rate', 'Too many solo runs from this network. Try again in a few minutes.');
         if (windowLimited(teamHits, teamKey(team), LIMITS.TEAM_RUNS_PER_HOUR, 3600_000)) throw new WsError('rate', 'This team has played a lot this hour. Try again later.');
@@ -794,7 +808,7 @@ let savedVersions = '';
 function saveRooms(strict = false) {
   try {
     writeAtomic(ROOMS_FILE, JSON.stringify({ rooms: [...rooms.values()].map((r) => r.snapshot()) }));
-    savedVersions = [...rooms.values()].map((r) => `${r.code}${r.version}`).join();
+    savedVersions = [...rooms.values()].map((r) => `${r.code}${r.saveVersion}`).join();
   } catch (e) {
     console.warn('[persist] rooms save failed', (e as Error).message);
     if (strict) throw e;
@@ -845,7 +859,7 @@ reconcileSquadFinds();
   if (dropped) console.warn(`[store] dropped ${dropped} cards whose photo is missing`);
 }
 setInterval(() => {
-  const v = [...rooms.values()].map((r) => `${r.code}${r.version}`).join();
+  const v = [...rooms.values()].map((r) => `${r.code}${r.saveVersion}`).join();
   if (v !== savedVersions) saveRooms();
 }, 2000);
 

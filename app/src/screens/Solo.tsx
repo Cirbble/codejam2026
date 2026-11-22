@@ -1,11 +1,11 @@
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useEffect, useState } from 'react';
-import { AppState, FlatList, Linking, Platform, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { AppState, FlatList, Linking, Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';
 import { BoardRow, cap, fetchBoard, type RoomView } from '../api';
 import { EmptySlot, GameCard } from '../components/GameCard';
-import { Bar, Button, H, Label, Mono, Screen, T } from '../components/ui';
+import { Bar, Button, Field, H, Label, Mono, Screen, T } from '../components/ui';
 import { HowToLink, HowToSheet, useHowTo } from '../components/HowTo';
 import { clock } from '../components/squadBits';
 import { useNav } from '../nav';
@@ -13,6 +13,11 @@ import { useSquad } from '../squad';
 import { C, F, TIERS } from '../theme';
 
 /** Quick play: one player, three 60 s indoor rounds, score goes on the team board. */
+const ADJ = ['Swift', 'Bold', 'Lucky', 'Sharp', 'Quiet', 'Brave', 'Sunny', 'Clever', 'Wild', 'Keen', 'Bright', 'Rapid', 'Steady', 'Merry', 'Jolly', 'Nimble'];
+const ANIMAL = ['Otters', 'Foxes', 'Herons', 'Badgers', 'Lynx', 'Owls', 'Moose', 'Beavers', 'Falcons', 'Hares', 'Ravens', 'Wolves', 'Loons', 'Bison', 'Martens', 'Puffins'];
+/** a fresh table's starting name: readable on the projector, rarely repeated, and one tap to replace */
+const randomTeam = () => `${ADJ[Math.floor(Math.random() * ADJ.length)]} ${ANIMAL[Math.floor(Math.random() * ANIMAL.length)]}`;
+
 export function SoloStart() {
   const nav = useNav();
   const squad = useSquad();
@@ -28,7 +33,7 @@ export function SoloStart() {
   useEffect(() => {
     AsyncStorage.multiGet(['rarefind.team', 'rarefind.name'])
       .then(([[, t], [, n]]) => {
-        if (t) setTeam(t);
+        setTeam(t || randomTeam());
         if (n) setName(n);
       })
       .catch(() => {});
@@ -40,7 +45,7 @@ export function SoloStart() {
   const n = name.trim().slice(0, 16) || t;
   const howto = useHowTo('quick');
   return (
-    <Screen zone="cloudline">
+    <Screen>
       <HowToSheet k={howto.open} onClose={howto.close} />
       <Bar onBack={nav.back} title="Quick play" right={<Button title="Team board" icon="award" kind="line" onPress={() => nav.push({ name: 'board' })} style={{ height: 44, paddingHorizontal: 12, borderRadius: 13 }} />} />
       <ScrollView contentContainerStyle={{ gap: 22, paddingTop: 8 }} keyboardShouldPersistTaps="handled">
@@ -51,12 +56,8 @@ export function SoloStart() {
         </View>
         <HowToLink onPress={howto.show} />
         <View style={{ gap: 8 }}>
-          <Label>Team</Label>
-          <TextInput value={team} onChangeText={(v) => { squad.clearError(); setTeam(v); }} placeholder="Team name" placeholderTextColor={C.faint} maxLength={24} autoCapitalize="words" style={styles.input} />
-        </View>
-        <View style={{ gap: 8 }}>
-          <Label>Your name</Label>
-          <TextInput value={name} onChangeText={setName} placeholder="Optional" placeholderTextColor={C.faint} maxLength={16} autoCapitalize="words" style={styles.input} />
+          <Label>Team name</Label>
+          <Field value={team} onChangeText={(v) => { squad.clearError(); setTeam(v); }} placeholder="Team name" maxLength={24} autoCapitalize="words" selectTextOnFocus />
         </View>
         <Button
           title="Start"
@@ -97,7 +98,9 @@ export function SoloStart() {
 }
 
 /** Who the ghost is, as the player should read it. */
-const ghostName = (room: RoomView) => (room.ghost && room.team && room.ghost.team.toLowerCase() === room.team.toLowerCase() ? "Your team's best" : (room.ghost?.team ?? ''));
+const ownGhost = (room: RoomView) => !!(room.ghost && room.team && room.ghost.team.toLowerCase() === room.team.toLowerCase());
+/** how the ghost reads mid-sentence: "your best" for your own team's best run, otherwise that team's name */
+const ghostName = (room: RoomView) => (ownGhost(room) ? 'your best' : (room.ghost?.team ?? ''));
 
 /**
  * Ghost race, under the Quick play timer: when today's top run found its item this round, a running score
@@ -109,31 +112,19 @@ export function GhostBar({ room, left, span }: { room: RoomView; left: number; s
   const split = g.splits[room.round - 1] ?? null;
   const elapsed = Math.max(0, Math.min(span, span - left));
   const passed = !!split && elapsed >= split.ms;
-  const name = ghostName(room);
   const mine = room.players[0]?.score ?? 0; // points land at each reveal, so this is through last round
   const theirs = g.splits.slice(0, room.round - 1).reduce((n, s) => n + (s?.points ?? 0), 0);
   return (
-    <View style={[styles.ghost, passed && { borderColor: C.blaze }]}>
+    <View style={styles.ghost}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Feather name="flag" size={15} color={passed ? C.blaze : C.inkSoft} />
-        <T numberOfLines={1} style={{ flex: 1, fontFamily: F.bodyBold, fontSize: 14 }}>
-          Racing {name}
+        <T numberOfLines={1} style={{ flex: 1, fontFamily: F.bodyBold, fontSize: 15 }}>
+          You {mine}
         </T>
-        <Mono numberOfLines={1} style={{ color: C.ink, flexShrink: 1 }}>
-          You {mine} · {name === "Your team's best" ? 'Best' : g.team} {theirs}
-        </Mono>
+        <T numberOfLines={1} style={{ flexShrink: 1, fontFamily: F.bodyBold, fontSize: 15, color: passed ? C.blaze : C.inkSoft }}>
+          {ownGhost(room) ? 'Best' : g.team} {theirs}
+        </T>
       </View>
-      <View style={styles.ghostTrack}>
-        <View style={{ width: `${(elapsed / span) * 100}%`, height: '100%', backgroundColor: passed ? C.blaze : C.inkSoft, opacity: 0.35, borderRadius: 999 }} />
-        {split && <View style={[styles.ghostMark, { left: `${(split.ms / span) * 100}%`, backgroundColor: passed ? C.blaze : C.ink }]} />}
-      </View>
-      <Mono style={{ color: passed ? C.blaze : C.inkSoft }}>
-        {!split
-          ? `${name} missed this one. Any find puts you ahead.`
-          : passed
-            ? `${name} had theirs by ${clock(split.ms)} (+${split.points})`
-            : `${name} found theirs at ${clock(split.ms)}`}
-      </Mono>
     </View>
   );
 }
@@ -152,14 +143,18 @@ export function SoloResults({ room }: { room: RoomView }) {
     setTimeout(() => squad.solo(name, team), 300);
   };
   return (
-    <Screen zone="ridge">
+    <Screen>
       <Bar onBack={() => { squad.leave(); nav.reset(); }} title={room.team ?? 'Quick play'} />
       <ScrollView contentContainerStyle={{ gap: 22, paddingBottom: 12 }} showsVerticalScrollIndicator={false}>
         <View style={{ alignItems: 'center', gap: 4 }}>
-          <Label>Score</Label>
-          <H size={72} style={{ fontVariant: ['tabular-nums'] }}>
-            {me?.score ?? 0}
-          </H>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+            <H size={72} style={{ fontVariant: ['tabular-nums'] }}>
+              {me?.score ?? 0}
+            </H>
+            <T numberOfLines={1} style={{ fontFamily: F.bodyBold, fontSize: 22 }}>
+              pts
+            </T>
+          </View>
           {room.counted === false ? (
             <T style={{ fontFamily: F.bodyBold, fontSize: 18, color: C.inkSoft }}>Practice run · doesn't count</T>
           ) : room.boardRank != null ? (
@@ -193,18 +188,10 @@ export function SoloResults({ room }: { room: RoomView }) {
             );
           })}
         </View>
-        {best && (
-          <T style={{ textAlign: 'center', color: C.inkSoft }}>
-            Best find: <Text style={{ fontFamily: F.bodyBold, color: TIERS[best.tier].text }}>{best.title}</Text>
-          </T>
-        )}
       </ScrollView>
       <View style={{ gap: 10 }}>
         <Button title={room.runsLeft === 0 ? 'Practice again' : 'Play again'} icon="rotate-ccw" kind={room.runsLeft === 0 ? 'line' : 'blaze'} onPress={again} />
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <Button title="Team board" icon="award" kind="line" onPress={() => nav.push({ name: 'board' })} style={{ flex: 1, paddingHorizontal: 10 }} />
-          <Button title="Squad" icon="users" kind="line" onPress={() => { squad.leave(); nav.reset({ name: 'squad' }); }} style={{ flex: 1, paddingHorizontal: 10 }} />
-        </View>
+        <Button title="Team board" icon="award" kind="line" onPress={() => nav.push({ name: 'board' })} />
         <Button title="Done" kind="quiet" onPress={() => { squad.leave(); nav.reset(); }} />
       </View>
     </Screen>
@@ -229,7 +216,7 @@ export function Board() {
     return () => clearInterval(id);
   }, [load]);
   return (
-    <Screen zone="ridge">
+    <Screen>
       <Bar onBack={nav.back} title="Team board" />
       {!rows ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -247,16 +234,13 @@ export function Board() {
           contentContainerStyle={{ gap: 8, paddingBottom: 20 }}
           renderItem={({ item, index }) => (
             <View style={[styles.row, index === 0 && { backgroundColor: C.card }]}>
-              <Text style={{ fontFamily: F.display, fontSize: 22, width: 34, color: C.ink }}>{index + 1}</Text>
+              <Text style={{ fontFamily: F.display, fontSize: 22, width: 34, color: C.ink }}>{(rows ?? []).findIndex((r) => r.best === item.best) + 1}</Text>
               {item.bestCard ? <GameCard card={item.bestCard} width={40} flat live={false} /> : <View style={{ width: 40 }} />}
               <View style={{ flex: 1, minWidth: 0 }}>
                 <T numberOfLines={1} style={{ fontFamily: F.bodyBold, fontSize: 17 }}>
                   {item.team}
                 </T>
-                <Mono>
-                  {item.plays} {item.plays === 1 ? 'run' : 'runs'}
-                  {item.bestCard ? ` · ${item.bestCard.title}` : ''}
-                </Mono>
+                {item.bestCard && <Mono numberOfLines={1}>{item.bestCard.title}</Mono>}
               </View>
               <Text style={{ fontFamily: F.display, fontSize: 28, color: C.ink, fontVariant: ['tabular-nums'] }}>{item.best}</Text>
             </View>
@@ -269,11 +253,10 @@ export function Board() {
 
 const styles = StyleSheet.create({
   rules: { backgroundColor: C.ink, borderRadius: 24, padding: 22, gap: 10, transform: [{ rotate: '-1deg' }] },
-  input: { height: 58, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.card, paddingHorizontal: 18, fontFamily: F.bodyMid, fontSize: 18, color: C.ink },
   miss: { borderRadius: 12, borderWidth: 2, borderStyle: 'dashed', borderColor: C.faint, alignItems: 'center', justifyContent: 'center', backgroundColor: C.paperDeep },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass },
-  ghost: { gap: 8, padding: 12, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed', borderColor: C.line, marginTop: 12 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 2, borderColor: C.ink },
+  ghost: { paddingHorizontal: 4, marginTop: 14 },
   ghostTrack: { height: 10, borderRadius: 999, backgroundColor: C.paperDeep, justifyContent: 'center' },
   ghostMark: { position: 'absolute', width: 14, height: 14, marginLeft: -7, borderRadius: 7, borderWidth: 2, borderColor: C.paper },
-  ghostResult: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, paddingHorizontal: 14, height: 40, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass },
+  ghostResult: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, paddingHorizontal: 14, height: 40, borderRadius: 999, borderWidth: 2, borderColor: C.ink },
 });

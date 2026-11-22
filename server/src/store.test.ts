@@ -16,8 +16,8 @@ test('crowd counts: once per (device, prompt, label) and once per image per prom
   // same device, same label, new photo: card still gets counts, crowd stats unchanged, and no first-ever bonus
   const again = store.countFind('o-red', 'fire hydrant', 'devA', 'img2');
   assert.deepEqual(plain(again), { sameCount: 1, totalCount: 1, counted: false, firstEver: false });
-  assert.equal(scoreFind(90, again.sameCount, again.totalCount, again.firstEver).points, 85, 'repeat is epic, not One of One');
-  assert.equal(scoreFind(90, a.sameCount, a.totalCount, a.firstEver).points, 100);
+  assert.equal(scoreFind(82, again.sameCount, again.totalCount, again.firstEver).points, 85, 'repeat is epic, not One of One');
+  assert.equal(scoreFind(82, a.sameCount, a.totalCount, a.firstEver).points, 100);
   // another device re-using the same photo
   const reused = store.countFind('o-red', 'fire hydrant', 'devB', 'img1');
   assert.equal(reused.counted, false);

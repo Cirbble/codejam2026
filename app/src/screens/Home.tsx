@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { LinearGradient } from 'expo-linear-gradient';
-import { AppState, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Animated, AppState, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { cap, Daily, fetchDaily, loadCachedDaily, MAX_TRIES, peekDaily } from '../api';
+import { cap, Daily, fetchCollection, fetchDaily, loadCachedDaily, MAX_TRIES, peekDaily } from '../api';
 import { CardBack, GameCard, Wordmark } from '../components/GameCard';
-import { Button, Caps, Glass, H, Label, Screen, T, tap } from '../components/ui';
+import { Button, H, Label, Mono, ScorePill, Screen, T, tap } from '../components/ui';
+import { Float, useReduceMotion } from '../components/Motion';
 import { useNav } from '../nav';
 import { useSquad } from '../squad';
-import { altitude, C, F, isNight, zoneForPoints } from '../theme';
+import { C, F } from '../theme';
 
 export function useDaily() {
   const [daily, setDaily] = useState<Daily | null>(peekDaily);
@@ -23,6 +23,7 @@ export function useDaily() {
   useEffect(() => {
     if (!peekDaily()) loadCachedDaily().then((d) => d && setDaily((cur) => cur ?? d));
     load();
+    fetchCollection().catch(() => {});
     const sub = AppState.addEventListener('change', (s) => s === 'active' && load());
     return () => sub.remove();
   }, [load]);
@@ -41,91 +42,87 @@ const fmtDay = (day: string) => {
   return d.toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric' });
 };
 
+/** invite (?join=) and event (?solo=1) links open their screen once per app run, not on every return to Home */
+const linkHandled: { solo: boolean; join: string | null } = { solo: false, join: null };
+
 export default function Home() {
   const nav = useNav();
   const squad = useSquad();
   const { daily, failed, reload } = useDaily();
-  const opened = React.useRef(false);
   useEffect(() => {
     // the event QR code opens Quick play straight away (?solo=1)
     const loc = (globalThis as any).location as Location | undefined;
-    if (!opened.current && loc?.search && /[?&]solo=1/.test(loc.search)) {
-      opened.current = true;
+    if (!linkHandled.solo && loc?.search && /[?&]solo=1/.test(loc.search)) {
+      linkHandled.solo = true;
       try {
         (globalThis as any).history?.replaceState(null, '', loc.pathname); // consume it: Back must reach Home
       } catch {}
       nav.push({ name: 'solo' });
       return;
     }
-    if (squad.pendingJoin && !squad.session && !opened.current) {
-      opened.current = true;
+    if (squad.pendingJoin && !squad.session && linkHandled.join !== squad.pendingJoin) {
+      // once per app run: Home remounts every time it is back on top, and Back from Squad must stay on Home
+      linkHandled.join = squad.pendingJoin;
+      try {
+        if (loc?.search && /[?&]join=/.test(loc.search)) (globalThis as any).history?.replaceState(null, '', loc.pathname);
+      } catch {}
       nav.push({ name: 'squad' });
     }
   }, [squad.pendingJoin, squad.session, nav]);
   const { width } = useWindowDimensions();
-  const fanW = Math.min(width, 520) - 40;
-  const cw = Math.min(140, fanW * 0.31);
+  const fanW = Math.max(0, Math.min(width, 520) - 40); // web can report 0 for a frame
+  // the hand fills the space it has: as tall as the stage allows, then the fan tightens so it still fits the width
+  const [stageH, setStageH] = useState(0);
+  const byHeight = stageH ? (stageH - 150) / 1.75 : 140;
+  const cw = Math.max(80, Math.min(fanW * 0.44, 175, byHeight));
+  const spread = Math.min(0.44, Math.max(0.2, (fanW - cw * 1.1) / (4 * cw)));
+  // hover (web) or press-and-hold (touch) on a card lifts that one into focus
+  const [focus, setFocus] = useState<number | null>(null);
   const found = daily ? daily.prompts.filter((p) => daily.cards[p.id]).length : 0;
   const total = daily?.prompts.length ?? 5;
   const done = daily != null && found === total;
   const next = daily?.prompts.find((p) => !daily.cards[p.id] && (daily.tries[p.id] ?? 0) < MAX_TRIES);
 
-  const zone = zoneForPoints(daily?.score ?? 0);
-  const night = isNight(zone);
-  const archW = Math.min(width, 520) - 40;
-  const archH = cw * 1.4 + 170;
-
   return (
-    <Screen zone={zone}>
+    <Screen>
       <View style={styles.top}>
-        <Wordmark size={34} color={night ? C.white : C.ink} />
-        <Button title="Cards" icon="layers" kind="line" onPress={() => nav.push({ name: 'collection' })} style={{ height: 44, paddingHorizontal: 16 }} />
+        <Wordmark size={36} />
+        <Button title="Cards" icon="layers" kind="line" onPress={() => nav.push({ name: 'collection' })} style={{ height: 44, paddingHorizontal: 14, borderRadius: 13 }} />
       </View>
-      <Label style={{ marginTop: 6, color: night ? '#E6E1FA' : '#2E3A66' }}>{daily ? fmtDay(daily.day) : new Date().toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric' })}</Label>
+      <Mono style={{ marginTop: 6 }}>{daily ? fmtDay(daily.day) : new Date().toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric' })}</Mono>
 
-      <View style={{ flex: 1, justifyContent: 'center' }}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Today's prompts" onPress={() => daily && nav.push({ name: 'daily' })} style={[styles.stage, { flex: 1, justifyContent: 'center' }]}>
-        {/* today's five, fanned like a hand of cards inside a cathedral window */}
-        <View style={[styles.arch, { width: archW, height: archH, borderTopLeftRadius: archW / 2, borderTopRightRadius: archW / 2 }]}>
-          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { margin: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.75)', borderTopLeftRadius: archW / 2 - 8, borderTopRightRadius: archW / 2 - 8, borderBottomLeftRadius: 18, borderBottomRightRadius: 18 }]} />
-          <Caps style={{ marginTop: archW * 0.11, fontSize: 12 }}>Today's ascent</Caps>
-          <View style={{ width: fanW, height: cw * 1.4 + 40, alignItems: 'center', justifyContent: 'center', marginTop: 6 }}>
-            {Array.from({ length: total }).map((_, i) => {
-              const p = daily?.prompts[i];
-              const card = p ? daily?.cards[p.id] : undefined;
-              const mid = (total - 1) / 2;
-              const off = i - mid;
-              return (
-                <View
-                  key={i}
-                  style={{
-                    position: 'absolute',
-                    transform: [{ translateX: off * cw * 0.44 }, { translateY: off * off * 5 }, { rotate: `${off * 6}deg` }],
-                    zIndex: card ? 10 + i : i,
-                  }}
-                >
-                  {card ? <GameCard card={card} width={cw} flat live={false} /> : <CardBack width={cw} />}
-                </View>
-              );
-            })}
-          </View>
-          <View style={styles.altitude}>
-            <H size={40} style={{ fontVariant: ['tabular-nums'] }}>
-              {altitude(daily?.score ?? 0)}
-            </H>
-            <T style={{ fontFamily: F.bodyBold, color: C.ink, fontSize: 14 }}>Today {found}/{total}</T>
-            <Feather name="chevron-right" size={18} color={C.inkSoft} style={{ alignSelf: 'center' }} />
-          </View>
+      <View style={{ flex: 1, justifyContent: 'center', paddingBottom: 12 }} onLayout={(e) => setStageH(e.nativeEvent.layout.height)}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Today's prompts"
+        onPress={() => daily && nav.push({ name: 'daily' })}
+        style={styles.stage}
+      >
+        {/* today's five, fanned like a hand of cards */}
+        <Float amp={4} period={4200} style={{ width: fanW, height: cw * 1.4 + 40, alignItems: 'center', justifyContent: 'center' }}>
+          {Array.from({ length: total }).map((_, i) => {
+            const p = daily?.prompts[i];
+            const card = p ? daily?.cards[p.id] : undefined;
+            const mid = (total - 1) / 2;
+            const off = i - mid;
+            return (
+              <Deal key={i} index={i} total={total} off={off} cw={cw} step={cw * spread} focus={focus} setFocus={setFocus} onPress={() => daily && nav.push({ name: 'daily' })}>
+                {card ? <GameCard card={card} width={cw} flat live={false} /> : <CardBack width={cw} />}
+              </Deal>
+            );
+          })}
+        </Float>
+        <View style={{ marginTop: 22 }}>
+          <ScorePill size="lg" score={daily?.score ?? 0} found={found} total={total} count chevron />
         </View>
       </Pressable>
+      </View>
 
       <View style={{ gap: 12 }}>
         {failed && (
-          <Glass style={{ paddingVertical: 10, paddingHorizontal: 14 }}>
-            <T style={{ textAlign: 'center', color: C.blaze, fontFamily: F.bodyBold }} onPress={reload}>
-              Can't reach the server. Tap to retry.
-            </T>
-          </Glass>
+          <T style={{ textAlign: 'center', color: C.blaze, fontFamily: F.bodyBold }} onPress={reload}>
+            Can't reach the server. Tap to retry.
+          </T>
         )}
         {next ? (
           <Pressable
@@ -135,43 +132,38 @@ export default function Home() {
               tap('medium');
               nav.push({ name: 'shoot', promptId: next.id, promptText: next.text, examples: next.examples, mode: 'daily' });
             }}
-            style={({ pressed }) => [styles.next, pressed && { transform: [{ translateY: 3 }] }]}
+            style={({ pressed }) => [styles.next, pressed && { transform: [{ translateY: 3 }, { rotate: '-1deg' }] }]}
           >
-            <LinearGradient colors={['#141A4A', '#1A2140', '#2A2470']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFill, { borderRadius: 24 }]} />
             <View style={{ flex: 1, gap: 6 }}>
-              <Label style={{ color: C.goldPale }}>Daily · next up</Label>
-              <H size={30} style={{ color: C.white }}>
+              <Label style={{ color: '#A9B1A2' }}>Daily · next up</Label>
+              <H size={28} style={{ color: C.paper }}>
                 {cap(next.text)}
               </H>
             </View>
             <View style={styles.shoot}>
-              <LinearGradient colors={['#FFE9A8', '#D9A53C']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFill, { borderRadius: 30 }]} />
-              <Feather name="camera" size={26} color={C.ink} />
+              <Feather name="camera" size={26} color={C.white} />
             </View>
           </Pressable>
         ) : !daily ? (
-          <View style={[styles.next, { backgroundColor: C.ink }]} accessibilityLabel="Loading today's prompts">
+          <View style={styles.next} accessibilityLabel="Loading today's prompts">
             <View style={{ flex: 1, gap: 10 }}>
-              <Label style={{ color: C.goldPale }}>Daily · next up</Label>
-              <View style={{ height: 22, width: '70%', borderRadius: 6, backgroundColor: '#2A3060' }} />
+              <Label style={{ color: '#A9B1A2' }}>Daily · next up</Label>
+              <View style={{ height: 22, width: '70%', borderRadius: 6, backgroundColor: '#2A3025' }} />
             </View>
-            <View style={[styles.shoot, { backgroundColor: '#2A3060', borderColor: '#2A3060' }]} />
+            <View style={[styles.shoot, { backgroundColor: '#2A3025', borderColor: '#2A3025' }]} />
           </View>
         ) : (
-          <Pressable accessibilityRole="button" onPress={() => nav.push({ name: 'daily' })} style={[styles.next, { backgroundColor: C.glass, borderColor: 'rgba(255,255,255,0.95)', boxShadow: '0px 12px 30px rgba(20,30,70,0.16)' }]}>
+          <Pressable accessibilityRole="button" onPress={() => nav.push({ name: 'daily' })} style={[styles.next, { backgroundColor: C.card, borderWidth: 2, borderColor: C.ink }]}>
             <View style={{ flex: 1, gap: 6 }}>
               <Label>{done ? 'All five found' : `${found} found · ${total - found} missed`}</Label>
-              <H size={26}>New climb at midnight</H>
+              <H size={24}>New prompts at midnight</H>
             </View>
             <Feather name="chevron-right" size={24} color={C.ink} />
           </Pressable>
         )}
-      </View>
-      </View>
-      <View style={{ gap: 12, marginTop: 12 }}>
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <Button title="Quick play" icon="zap" kind="line" onPress={() => nav.push({ name: 'solo' })} style={{ flex: 1.4, paddingHorizontal: 8 }} />
-          <Button title="Squad" icon="users" kind="line" onPress={() => nav.push({ name: 'squad' })} style={{ flex: 1, paddingHorizontal: 8 }} />
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+          <Button title="Quick play" icon="zap" kind="ink" onPress={() => nav.push({ name: 'solo' })} style={{ flex: 1.4, paddingHorizontal: 8 }} />
+          <Button title="Squad" kind="line" onPress={() => nav.push({ name: 'squad' })} style={{ flex: 1, paddingHorizontal: 8 }} />
         </View>
       </View>
     </Screen>
@@ -180,9 +172,70 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  stage: { alignItems: 'center', paddingBottom: 18 },
-  arch: { alignItems: 'center', borderWidth: 1, borderColor: 'rgba(232,200,114,0.95)', borderBottomLeftRadius: 26, borderBottomRightRadius: 26, backgroundColor: 'rgba(255,255,255,0.3)', boxShadow: '0px 30px 60px rgba(20,30,70,0.2)' },
-  altitude: { flexDirection: 'row', alignItems: 'baseline', gap: 10, marginTop: 10, paddingVertical: 6, paddingHorizontal: 18, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(232,200,114,0.95)', backgroundColor: 'rgba(255,255,255,0.9)', boxShadow: '0px 8px 24px rgba(20,30,70,0.2)' },
-  next: { minHeight: 100, flexDirection: 'row', alignItems: 'center', gap: 16, padding: 20, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(232,200,114,0.45)', boxShadow: '0px 5px 0px #B8892A' },
-  shoot: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, borderColor: '#FFF6DA', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: '0px 0px 24px rgba(255,214,120,0.6)' },
+  stage: { alignItems: 'center', paddingBottom: 22 },
+  next: { minHeight: 100, flexDirection: 'row', alignItems: 'center', gap: 16, padding: 20, borderRadius: 22, backgroundColor: C.ink, transform: [{ rotate: '-1deg' }], boxShadow: `0px 5px 0px ${C.blaze}` },
+  shoot: { width: 60, height: 60, borderRadius: 30, backgroundColor: C.blaze, borderWidth: 2, borderColor: C.paper, alignItems: 'center', justifyContent: 'center' },
 });
+
+/**
+ * One card of today's hand, dealt in from below with a little stagger. The first card sits on top of the stack.
+ * Holding a card (touch) or hovering it (web) brings it into focus: it lifts, straightens, grows a little and comes to
+ * the front, while its neighbours ease aside and dim.
+ */
+let dealt = false;
+const FOCUS_SCALE = 1.14;
+function Deal({ children, index, total, off, cw, step, focus, setFocus, onPress }: { children: React.ReactNode; index: number; total: number; off: number; cw: number; step: number; focus: number | null; setFocus: (i: number | null) => void; onPress: () => void }) {
+  const reduce = useReduceMotion();
+  const skip = reduce || dealt;
+  const nd = Platform.OS !== 'web';
+  const v = React.useRef(new Animated.Value(skip ? 1 : 0)).current;
+  const f = React.useRef(new Animated.Value(0)).current; // this card in focus
+  const push = React.useRef(new Animated.Value(0)).current; // sideways, away from the focused card
+  const dim = React.useRef(new Animated.Value(0)).current; // a paper wash over the cards out of focus
+  React.useEffect(() => {
+    if (index === total - 1) setTimeout(() => (dealt = true), 900);
+    if (skip) return v.setValue(1);
+    Animated.spring(v, { toValue: 1, delay: 80 + index * 70, friction: 7, tension: 60, useNativeDriver: nd }).start();
+  }, [v, index, total, skip, nd]);
+  const mine = focus === index;
+  const away = focus == null || mine ? 0 : Math.sign(index - focus) * cw * (Math.abs(index - focus) === 1 ? 0.22 : 0.12);
+  React.useEffect(() => {
+    const to = (val: Animated.Value, x: number) => (reduce ? val.setValue(x) : Animated.spring(val, { toValue: x, friction: 8, tension: 120, useNativeDriver: nd }).start());
+    to(f, mine ? 1 : 0);
+    to(push, away);
+    to(dim, focus == null || mine ? 0 : 0.5);
+  }, [mine, away, focus, reduce, f, push, dim, nd]);
+  const tilt = off * 6;
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        zIndex: mine ? 50 : total - index,
+        opacity: v.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 1, 1] }),
+        transform: [
+          { translateX: Animated.add(Animated.multiply(v, off * step), push) },
+          { translateY: Animated.add(Animated.add(v.interpolate({ inputRange: [0, 1], outputRange: [cw * 0.9, 0] }), off * off * 5), f.interpolate({ inputRange: [0, 1], outputRange: [0, -cw * 0.16] })) },
+          { rotate: Animated.multiply(Animated.multiply(v, f.interpolate({ inputRange: [0, 1], outputRange: [1, 0] })), tilt).interpolate({ inputRange: [-90, 90], outputRange: ['-90deg', '90deg'] }) },
+          { scale: f.interpolate({ inputRange: [0, 1], outputRange: [1, FOCUS_SCALE] }) },
+        ],
+      }}
+    >
+      <Pressable
+        accessible={false}
+        onPress={onPress}
+        onHoverIn={() => setFocus(index)}
+        onHoverOut={() => setFocus(null)}
+        onLongPress={() => {
+          tap();
+          setFocus(index);
+        }}
+        delayLongPress={260}
+        onPressOut={() => Platform.OS !== 'web' && setFocus(null)}
+        style={mine ? { boxShadow: '0px 14px 24px rgba(18,21,15,0.35)', borderRadius: 18 } : undefined}
+      >
+        {children}
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: (20 * cw) / 300 + 2, backgroundColor: C.paper, opacity: dim }]} />
+      </Pressable>
+    </Animated.View>
+  );
+}

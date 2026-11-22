@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { C, F } from '../theme';
 
-const AVATAR = ['#2F7350', '#2F62C8', '#6340C0', '#B8295E', '#8A6A55', '#0E7C86', '#8C6310', '#1A2140'];
+const AVATAR = ['#23914A', '#2563EB', '#8B35E0', '#E0457B', '#F2542D', '#0E7C86', '#9A6B00', '#475569'];
 const colorFor = (id: string) => AVATAR[[...id].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR.length];
 
 /** Server-time clock, ticking 4 times a second. */
@@ -22,7 +22,7 @@ export const clock = (ms: number) => {
 
 export function Avatar({ id, name, size = 36 }: { id: string; name: string; size?: number }) {
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colorFor(id), borderWidth: 2, borderColor: C.white, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colorFor(id), borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center' }}>
       <Text style={{ fontFamily: F.display, color: C.white, fontSize: size * 0.45 }}>{name.slice(0, 1).toUpperCase()}</Text>
     </View>
   );

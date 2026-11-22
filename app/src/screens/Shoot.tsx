@@ -4,30 +4,73 @@ import { Image } from 'expo-image';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
+import { settle, showBase } from '../components/Backdrop';
 import { AppState, Linking, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { cap, Card, newSubmissionId, rarityLine, submitFind } from '../api';
 import { FlipReveal, Pending } from '../components/Reveal';
-import { Button, Glass, H, IconButton, Label, Mono, Screen, T, tap } from '../components/ui';
-import { Sky } from '../components/Sky';
+import { CARD_RATIO } from '../components/GameCard';
+import { Button, H, IconButton, Label, Mono, Screen, T, tap } from '../components/ui';
 import { useNav } from '../nav';
 import { useSquad } from '../squad';
-import { C, F, isNight, TIERS } from '../theme';
+import { C, F, TIERS } from '../theme';
 
 type Phase =
   | { k: 'aim' }
   | { k: 'capturing' }
   | { k: 'judging'; uri: string }
-  | { k: 'won'; card: Card; setsDone?: { id: string; name: string }[] }
+  | { k: 'won'; card: Card; uri: string; setsDone?: { id: string; name: string }[] }
   | { k: 'nope'; uri: string; verdict: string; triesLeft?: number; screen?: boolean }
   | { k: 'error'; uri?: string; message: string; retry?: () => void };
 
-const DEV_PHOTOS = ['red_fire_hydrant', 'ball', 'pen', 'shoe', 'bench', 'laptop_screen'];
+const DEV_PHOTOS = ['red_fire_hydrant', 'fire_hydrant', 'red_bicycle', 'maple_leaf', 'cardinal', 'payphone', 'pennant', 'bicycle_shadow', 'ball', 'pen', 'shoe', 'park_bench', 'laptop_screen'];
 
-async function toJpeg(uri: string) {
-  const out = await ImageManipulator.manipulateAsync(uri, [{ resize: { width: 768 } }], { compress: 0.72, format: ImageManipulator.SaveFormat.JPEG, base64: true });
+/** expo-camera's web build opens the camera without a resolution, so browsers fall back to about 640x480, and it never
+ *  asks for autofocus. Once the stream is up, ask the track for the camera's full resolution and continuous focus. */
+async function sharpenWebCamera() {
+  try {
+    const video = document.querySelector('video');
+    const track = (video?.srcObject as MediaStream | null)?.getVideoTracks?.()[0];
+    if (!track) return;
+    const caps = (track.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { focusMode?: string[] };
+    const w = Math.min(caps.width?.max ?? 1920, 3840);
+    const h = Math.min(caps.height?.max ?? 1440, 2880);
+    await track.applyConstraints({ width: { ideal: w }, height: { ideal: h } }).catch(() => {});
+    if (caps.focusMode?.includes('continuous')) await track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] }).catch(() => {});
+  } catch {}
+}
+
+/**
+ * crop (web): a digital zoom factor z and the camera view's size. The preview fills the view (cover), so the photo is
+ * first cut to what was visible, then to its centre 1/z, using the image's real size (the track's reported size can differ).
+ */
+async function toJpeg(uri: string, crop?: { z: number; viewW: number; viewH: number }) {
+  const ops: ImageManipulator.Action[] = [];
+  if (crop && crop.z > 1.01 && crop.viewW > 0 && crop.viewH > 0) {
+    const info = await ImageManipulator.manipulateAsync(uri, []);
+    const w = info.width;
+    const h = info.height;
+    if (w && h) {
+      const view = crop.viewW / crop.viewH;
+      const visW = w / h > view ? h * view : w;
+      const visH = w / h > view ? h : w / view;
+      const cw = Math.max(1, Math.round(visW / crop.z));
+      const ch = Math.max(1, Math.round(visH / crop.z));
+      ops.push({ crop: { originX: Math.round((w - cw) / 2), originY: Math.round((h - ch) / 2), width: cw, height: ch } });
+    }
+  }
+  ops.push({ resize: { width: 1080 } });
+  const out = await ImageManipulator.manipulateAsync(uri, ops, { compress: 0.72, format: ImageManipulator.SaveFormat.JPEG, base64: true });
   return { uri: out.uri, b64: out.base64 ?? '' };
 }
+
+// Zoom like a phone camera: pinch, or tap a step. Native uses the lens zoom; the web build zooms digitally (scaled preview, cropped photo).
+const WEB = Platform.OS === 'web';
+const MAX_ZOOM = WEB ? 4 : 8;
+const ZOOM_STEPS = [1, 2, 4];
+/** expo-camera takes 0..1 across the device's zoom range; this treats that range as 1× to MAX_ZOOM× */
+const lensZoom = (x: number) => Math.min(1, Math.max(0, (x - 1) / (MAX_ZOOM - 1)));
+const fmtZoom = (x: number) => (Math.abs(x - Math.round(x)) < 0.05 ? `${Math.round(x)}×` : `${x.toFixed(1)}×`);
 
 function Checking() {
   const [slow, setSlow] = useState(false);
@@ -42,7 +85,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
   const nav = useNav();
   const squad = useSquad();
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
+  const { width, height: winH } = useWindowDimensions();
   const [perm, requestPerm, getPerm] = useCameraPermissions();
   useEffect(() => {
     const sub = AppState.addEventListener('change', (st) => st === 'active' && getPerm());
@@ -53,9 +96,61 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
   const [phase, setPhase] = useState<Phase>({ k: 'aim' });
   const [camKey, setCamKey] = useState(0);
   const [camFailed, setCamFailed] = useState(false);
-  const cardW = Math.min(width - 72, 330);
+  const [zoom, setZoom] = useState(1);
+  const pinch = useRef<{ d: number; z: number } | null>(null);
+  const span = (t: ArrayLike<{ pageX: number; pageY: number }>) => Math.hypot(t[0].pageX - t[1].pageX, t[0].pageY - t[1].pageY);
+  // web: a two-finger pinch would zoom the whole page; on this screen it zooms the camera instead
+  const zoomRef = useRef(1);
+  zoomRef.current = zoom;
   useEffect(() => {
-    if (perm && !perm.granted && perm.status === 'undetermined') requestPerm();
+    if (!WEB || typeof document === 'undefined') return;
+    const html = document.documentElement;
+    const prev = [html.style.touchAction, document.body.style.touchAction];
+    html.style.touchAction = 'none';
+    document.body.style.touchAction = 'none';
+    const noPageZoom = (e: TouchEvent) => {
+      if (e.touches.length > 1) e.preventDefault();
+    };
+    // Safari reports pinches as gesture events (scale relative to the gesture start)
+    let gz = 1;
+    const gStart = (e: Event) => {
+      e.preventDefault();
+      gz = zoomRef.current;
+    };
+    const gChange = (e: Event) => {
+      e.preventDefault();
+      const s = (e as unknown as { scale?: number }).scale ?? 1;
+      setZoom(Math.round(Math.min(MAX_ZOOM, Math.max(1, gz * s)) * 10) / 10);
+    };
+    const opts = { passive: false } as AddEventListenerOptions;
+    document.addEventListener('touchmove', noPageZoom, opts);
+    document.addEventListener('gesturestart', gStart, opts);
+    document.addEventListener('gesturechange', gChange, opts);
+    return () => {
+      document.removeEventListener('touchmove', noPageZoom, opts);
+      document.removeEventListener('gesturestart', gStart, opts);
+      document.removeEventListener('gesturechange', gChange, opts);
+      html.style.touchAction = prev[0];
+      document.body.style.touchAction = prev[1];
+    };
+  }, []);
+  useEffect(() => {
+    if (phase.k === 'aim' || phase.k === 'nope' || phase.k === 'error') settle();
+  }, [phase.k]);
+  useEffect(() => () => settle(), []);
+  // the reveal (card + tier line + meter, plus any "Set complete" badges) must fit the stage height too, or on a phone
+  // browser the card climbs over the Close button and the meter slides under Done
+  const [stageH, setStageH] = useState(0);
+  const badges = phase.k === 'won' ? phase.setsDone?.length ?? 0 : 0;
+  const byHeight = stageH ? (stageH - 198 - badges * 58) / CARD_RATIO : Infinity;
+  const cardW = Math.max(150, Math.min(width - 72, 330, byHeight));
+  const asked = useRef(false); // ask once per visit: a dismissed browser prompt reports "undetermined" again
+  useEffect(() => {
+    if (asked.current) return;
+    if (perm && !perm.granted && perm.status === 'undetermined') {
+      asked.current = true;
+      requestPerm();
+    }
   }, [perm, requestPerm]);
 
   // squad: when the round closes (time up, or everyone found), go back so the reveal isn't missed
@@ -71,12 +166,14 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
       !!squad.room?.bingoBoard?.marks[squad.session?.playerId ?? '']?.includes(promptId) ||
       !!squad.room?.rounds.some((r) => r.cards.some((c) => c.playerId === squad.session?.playerId && c.promptId === promptId));
     if ((phase.k === 'judging' || phase.k === 'capturing') && !mineIn) return; // the photo or its verdict is still on its way
-    const t = setTimeout(() => nav.back(), phase.k === 'won' ? 2200 : phase.k === 'aim' ? 0 : 2500);
+    if (phase.k === 'error' && phase.retry) return; // "Send again" stays until the player taps it or leaves
+    const t = setTimeout(() => nav.back(), phase.k === 'won' ? 3800 : phase.k === 'aim' ? 0 : 2500);
     return () => clearTimeout(t);
   }, [mode, roomPhase, roomRound, phase.k, nav]);
 
   const judge = async (uri: string, b64: string, submissionId = newSubmissionId()) => {
     setPhase({ k: 'judging', uri });
+    showBase();
     const s = squad.session;
     const res =
       mode === 'squad' && s
@@ -86,7 +183,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
       const again = ['network', 'ai_down', 'bad_response', 'rate', 'budget'].includes(res.error);
       setPhase({ k: 'error', uri, message: res.message, retry: again ? () => judge(uri, b64, submissionId) : undefined });
     } else if (res.accepted) {
-      setPhase({ k: 'won', card: res.card, setsDone: res.setsDone });
+      setPhase({ k: 'won', card: res.card, uri, setsDone: res.setsDone });
       if (res.setsDone?.length) setTimeout(() => tap('medium'), 1200); // after the card flip
     }
     else setPhase({ k: 'nope', uri, verdict: res.verdict, triesLeft: res.triesLeft, screen: res.reason === 'screen' });
@@ -103,7 +200,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
     try {
       const pic = await cam.current.takePictureAsync({ quality: 0.6, shutterSound: false });
       if (!pic?.uri) throw new Error('no photo');
-      const { uri, b64 } = await toJpeg(pic.uri);
+      const { uri, b64 } = await toJpeg(pic.uri, WEB ? { z: zoom, viewW: width, viewH: winH } : undefined);
       judge(uri, b64);
     } catch {
       setPhase({ k: 'error', message: "The camera didn't take the photo. Try again." });
@@ -129,20 +226,17 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
 
   // ---------- result states share the paper background
   if (phase.k !== 'aim' && phase.k !== 'capturing') {
-    // the result sits on the sky of the altitude it reached
-    const zone = phase.k === 'won' ? TIERS[phase.card.tier].zone : phase.k === 'judging' ? 'cloudline' : 'foothill';
-    const night = isNight(zone);
     return (
-      <Screen zone={zone}>
+      <Screen>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <IconButton icon="x" label="Close" onPress={close} tone={night ? 'light' : 'ink'} />
+          <IconButton icon="x" label="Close" onPress={close} />
           {phase.k !== 'won' && (
             <Label numberOfLines={1} style={{ flex: 1 }}>
               {promptText}
             </Label>
           )}
         </View>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 22 }}>
+        <View style={{ flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'center', gap: 22 }} onLayout={(e) => setStageH(e.nativeEvent.layout.height)}>
           {phase.k === 'judging' && (
             <>
               <Pending width={cardW} />
@@ -151,7 +245,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
           )}
           {phase.k === 'won' && (
             <>
-              <FlipReveal card={phase.card} width={cardW} onDark={night} />
+              <FlipReveal card={phase.card} width={cardW} localPhoto={phase.uri} />
               {phase.setsDone?.map((s) => (
                 <View key={s.id} style={styles.setDone}>
                   <Feather name="award" size={20} color={C.white} />
@@ -165,16 +259,22 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
               {phase.uri ? (
                 <View style={[styles.rejected, { width: cardW * 0.8, height: cardW * 0.8 }]}>
                   <Image source={{ uri: phase.uri }} style={StyleSheet.absoluteFill} contentFit="cover" />
-                  <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(244,247,252,0.35)' }]} />
+                  <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(233,237,229,0.35)' }]} />
                 </View>
               ) : null}
-              <Glass style={{ alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 16, alignSelf: 'stretch' }}>
-                <H size={32} style={{ textAlign: 'center' }}>
+              <View style={{ alignItems: 'center', gap: 8, paddingHorizontal: 8 }}>
+                <H size={30} style={{ textAlign: 'center' }}>
                   {phase.k === 'error' ? 'Not judged yet' : phase.screen ? 'Find the real thing' : 'Not a match'}
                 </H>
-                <T style={{ textAlign: 'center', fontSize: 17, color: C.ink }}>{phase.k === 'nope' ? phase.verdict : phase.message}</T>
+                <T style={{ textAlign: 'center', fontSize: 17, color: C.ink }}>
+                  {phase.k === 'nope'
+                    ? phase.screen && /^find the real thing\.?$/i.test(phase.verdict.trim())
+                      ? 'That looks like a screen or a printed picture. Photograph the actual object.'
+                      : phase.verdict
+                    : phase.message}
+                </T>
                 {phase.k === 'nope' && phase.triesLeft != null && <T style={{ fontFamily: F.bodyBold, color: C.blaze }}>{phase.triesLeft === 0 ? 'No tries left' : `${phase.triesLeft} ${phase.triesLeft === 1 ? 'try' : 'tries'} left`} {mode === 'squad' ? (squad.room?.bingo ? 'on this square' : 'this round') : 'today'}</T>}
-              </Glass>
+              </View>
             </>
           )}
         </View>
@@ -194,23 +294,45 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
 
   // ---------- camera
   const denied = perm && !perm.granted;
-  // on wide screens (desktop) the camera sits in a centred frame and the sky stays around it
-  const framed = width >= 700;
-  const frameH = Math.min(height - 48, 860);
-  const frameW = Math.min(frameH * 0.75, 560);
-  const view = (
-    <View style={framed ? [styles.frame, { width: frameW, height: frameH }] : { flex: 1, backgroundColor: C.ink }}>
-      {perm?.granted && <CameraView key={camKey} ref={cam} style={StyleSheet.absoluteFill} facing="back" onCameraReady={() => {
-            setReady(true);
-            setCamFailed(false);
-          }}
-          onMountError={() => {
-            setReady(false);
-            setCamFailed(true);
-          }}
-        />
-      }
-      <LinearGradient colors={['rgba(14,19,40,0.85)', 'rgba(14,19,40,0)']} style={[styles.topShade, { paddingTop: insets.top + 8 }]}>
+  return (
+    <View
+      style={{ flex: 1, backgroundColor: C.ink, overflow: 'hidden' }}
+      onTouchStart={(e) => {
+        const t = e.nativeEvent.touches;
+        if (t.length === 2) pinch.current = { d: span(t), z: zoom };
+      }}
+      onTouchMove={(e) => {
+        const t = e.nativeEvent.touches;
+        if (t.length !== 2) return;
+        if (!pinch.current) pinch.current = { d: span(t), z: zoom };
+        const next = Math.min(MAX_ZOOM, Math.max(1, (pinch.current.z * span(t)) / Math.max(1, pinch.current.d)));
+        setZoom(Math.round(next * 10) / 10);
+      }}
+      onTouchEnd={(e) => {
+        if (e.nativeEvent.touches.length < 2) pinch.current = null;
+      }}
+    >
+      {perm?.granted && (
+        <View style={[StyleSheet.absoluteFill, WEB && { transform: [{ scale: zoom }] }]} pointerEvents="none">
+          <CameraView
+            key={camKey}
+            ref={cam}
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            zoom={WEB ? 0 : lensZoom(zoom)}
+            onCameraReady={() => {
+              setReady(true);
+              setCamFailed(false);
+              if (WEB) sharpenWebCamera();
+            }}
+            onMountError={() => {
+              setReady(false);
+              setCamFailed(true);
+            }}
+          />
+        </View>
+      )}
+      <LinearGradient colors={['rgba(18,21,15,0.85)', 'rgba(18,21,15,0)']} style={[styles.topShade, { paddingTop: insets.top + 8 }]}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingHorizontal: 20 }}>
           <IconButton icon="x" label="Close" onPress={close} tone="light" />
           <View style={{ flex: 1, gap: 6 }}>
@@ -262,6 +384,30 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
             ))}
           </View>
         )}
+        {perm?.granted && !camFailed && (
+          <View style={styles.zoomRow}>
+            {ZOOM_STEPS.map((s, i) => {
+              const next = ZOOM_STEPS[i + 1] ?? Infinity;
+              const on = zoom >= s - 0.05 && zoom < next - 0.05;
+              return (
+                <Pressable
+                  key={s}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Zoom ${s}x`}
+                  accessibilityState={{ selected: on }}
+                  onPress={() => {
+                    tap('light');
+                    setZoom(s);
+                  }}
+                  hitSlop={6}
+                  style={[styles.zoomChip, on && styles.zoomChipOn]}
+                >
+                  <Mono style={{ color: on ? C.ink : C.white, fontSize: 13 }}>{on ? fmtZoom(zoom) : `${s}×`}</Mono>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Take photo"
@@ -274,23 +420,18 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
       </View>
     </View>
   );
-  if (!framed) return view;
-  return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-      <Sky zone="ridge" />
-      {view}
-    </View>
-  );
 }
 
 const styles = StyleSheet.create({
-  frame: { backgroundColor: C.ink, borderRadius: 28, overflow: 'hidden', borderWidth: 3, borderColor: C.goldLight, boxShadow: '0px 18px 40px rgba(14,19,40,0.35)' },
+  zoomRow: { flexDirection: 'row', gap: 8, padding: 4, borderRadius: 999, backgroundColor: 'rgba(18,21,15,0.55)', marginBottom: 18 },
+  zoomChip: { minWidth: 44, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
+  zoomChipOn: { backgroundColor: C.paper },
   topShade: { position: 'absolute', top: 0, left: 0, right: 0, paddingBottom: 48 },
   center: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 40 },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center' },
-  shutter: { width: 84, height: 84, borderRadius: 42, borderWidth: 3, borderColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
-  shutterIn: { width: 66, height: 66, borderRadius: 33, backgroundColor: '#FFF2C6' },
-  rejected: { borderRadius: 18, borderWidth: 4, borderColor: C.white, overflow: 'hidden', transform: [{ rotate: '-3deg' }], boxShadow: '0px 14px 30px rgba(40,25,15,0.3)' },
+  shutter: { width: 84, height: 84, borderRadius: 42, borderWidth: 5, borderColor: C.white, alignItems: 'center', justifyContent: 'center' },
+  shutterIn: { width: 64, height: 64, borderRadius: 32, backgroundColor: C.white },
+  rejected: { borderRadius: 18, borderWidth: 2, borderColor: C.ink, overflow: 'hidden', transform: [{ rotate: '-3deg' }] },
   setDone: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, height: 46, borderRadius: 999, backgroundColor: C.blaze },
   devChip:{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.18)' },
 });

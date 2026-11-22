@@ -158,7 +158,17 @@ export const TWINS: Record<string, PromptDef> = Object.fromEntries([
 ]);
 const TWIN_BY_ID = new Map(Object.values(TWINS).map((t) => [t.id, t]));
 export const twinFor = (promptId: string): PromptDef | undefined => TWINS[promptId];
-const ALL = new Map([...OUTDOOR, ...INDOOR].map((p) => [p.id, p]));
+/** Judging day: a daily the judges can mostly play from the room, with two that send them outside. */
+const JUDGING: PromptDef[] = [
+  INDOOR.find((p) => p.id === 'i-plug')!,
+  P('j-black', 'color', 'something black', 'a laptop, a backpack, a phone case, a mug'),
+  P('j-light', 'light', 'something that emits light', 'a lamp, a lit laptop or phone (the device itself counts), a ceiling light, an exit sign'),
+  P('j-animal', 'animal', 'an animal', 'a person (people are animals too, so any human counts), a dog, a pigeon, a squirrel, a spider'),
+  P('j-drink', 'container', 'something you can drink', 'a water bottle, a coffee, a can of pop, a juice box'),
+];
+/** Days whose daily is set by hand instead of drawn from the outdoor pool. */
+const FIXED_DAILY: Record<string, PromptDef[]> = { '2026-11-22': JUDGING };
+const ALL = new Map([...OUTDOOR, ...INDOOR, ...JUDGING].map((p) => [p.id, p]));
 
 export function promptById(id: string): PromptDef | undefined {
   return ALL.get(id) ?? TWIN_BY_ID.get(id);
@@ -200,7 +210,7 @@ export function seeded(seed: string): () => number {
 }
 
 export function dailyPrompts(day: string): PromptDef[] {
-  return pickPrompts(OUTDOOR, 5, seeded(`rarefind-daily:${day}`));
+  return FIXED_DAILY[day] ?? pickPrompts(OUTDOOR, 5, seeded(`rarefind-daily:${day}`));
 }
 
 /** Solo quick play: one fixed set per Toronto day, the same 3 prompts for every team (opens with "something red"). */
