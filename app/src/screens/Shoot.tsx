@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { cap, Card, newSubmissionId, rarityLine, submitFind } from '../api';
 import { FlipReveal, Pending } from '../components/Reveal';
 import { Button, Glass, H, IconButton, Label, Mono, Screen, T, tap } from '../components/ui';
+import { Sky } from '../components/Sky';
 import { useNav } from '../nav';
 import { useSquad } from '../squad';
 import { C, F, isNight, TIERS } from '../theme';
@@ -41,7 +42,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
   const nav = useNav();
   const squad = useSquad();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const [perm, requestPerm, getPerm] = useCameraPermissions();
   useEffect(() => {
     const sub = AppState.addEventListener('change', (st) => st === 'active' && getPerm());
@@ -193,8 +194,12 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
 
   // ---------- camera
   const denied = perm && !perm.granted;
-  return (
-    <View style={{ flex: 1, backgroundColor: C.ink }}>
+  // on wide screens (desktop) the camera sits in a centred frame and the sky stays around it
+  const framed = width >= 700;
+  const frameH = Math.min(height - 48, 860);
+  const frameW = Math.min(frameH * 0.75, 560);
+  const view = (
+    <View style={framed ? [styles.frame, { width: frameW, height: frameH }] : { flex: 1, backgroundColor: C.ink }}>
       {perm?.granted && <CameraView key={camKey} ref={cam} style={StyleSheet.absoluteFill} facing="back" onCameraReady={() => {
             setReady(true);
             setCamFailed(false);
@@ -269,9 +274,17 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
       </View>
     </View>
   );
+  if (!framed) return view;
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <Sky zone="ridge" />
+      {view}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
+  frame: { backgroundColor: C.ink, borderRadius: 28, overflow: 'hidden', borderWidth: 3, borderColor: C.goldLight, boxShadow: '0px 18px 40px rgba(14,19,40,0.35)' },
   topShade: { position: 'absolute', top: 0, left: 0, right: 0, paddingBottom: 48 },
   center: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 40 },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center' },
