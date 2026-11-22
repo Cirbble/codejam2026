@@ -8,10 +8,10 @@ import { AppState, Linking, Platform, Pressable, StyleSheet, useWindowDimensions
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { cap, Card, newSubmissionId, rarityLine, submitFind } from '../api';
 import { FlipReveal, Pending } from '../components/Reveal';
-import { Button, H, IconButton, Label, Mono, Screen, T, tap } from '../components/ui';
+import { Button, Glass, H, IconButton, Label, Mono, Screen, T, tap } from '../components/ui';
 import { useNav } from '../nav';
 import { useSquad } from '../squad';
-import { C, F, TIERS } from '../theme';
+import { C, F, isNight, TIERS } from '../theme';
 
 type Phase =
   | { k: 'aim' }
@@ -128,10 +128,13 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
 
   // ---------- result states share the paper background
   if (phase.k !== 'aim' && phase.k !== 'capturing') {
+    // the result sits on the sky of the altitude it reached
+    const zone = phase.k === 'won' ? TIERS[phase.card.tier].zone : phase.k === 'judging' ? 'cloudline' : 'foothill';
+    const night = isNight(zone);
     return (
-      <Screen>
+      <Screen zone={zone}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <IconButton icon="x" label="Close" onPress={close} />
+          <IconButton icon="x" label="Close" onPress={close} tone={night ? 'light' : 'ink'} />
           {phase.k !== 'won' && (
             <Label numberOfLines={1} style={{ flex: 1 }}>
               {promptText}
@@ -147,7 +150,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
           )}
           {phase.k === 'won' && (
             <>
-              <FlipReveal card={phase.card} width={cardW} />
+              <FlipReveal card={phase.card} width={cardW} onDark={night} />
               {phase.setsDone?.map((s) => (
                 <View key={s.id} style={styles.setDone}>
                   <Feather name="award" size={20} color={C.white} />
@@ -161,16 +164,16 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
               {phase.uri ? (
                 <View style={[styles.rejected, { width: cardW * 0.8, height: cardW * 0.8 }]}>
                   <Image source={{ uri: phase.uri }} style={StyleSheet.absoluteFill} contentFit="cover" />
-                  <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(233,237,229,0.35)' }]} />
+                  <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(244,247,252,0.35)' }]} />
                 </View>
               ) : null}
-              <View style={{ alignItems: 'center', gap: 8, paddingHorizontal: 8 }}>
-                <H size={30} style={{ textAlign: 'center' }}>
+              <Glass style={{ alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 16, alignSelf: 'stretch' }}>
+                <H size={32} style={{ textAlign: 'center' }}>
                   {phase.k === 'error' ? 'Not judged yet' : phase.screen ? 'Find the real thing' : 'Not a match'}
                 </H>
                 <T style={{ textAlign: 'center', fontSize: 17, color: C.ink }}>{phase.k === 'nope' ? phase.verdict : phase.message}</T>
                 {phase.k === 'nope' && phase.triesLeft != null && <T style={{ fontFamily: F.bodyBold, color: C.blaze }}>{phase.triesLeft === 0 ? 'No tries left' : `${phase.triesLeft} ${phase.triesLeft === 1 ? 'try' : 'tries'} left`} {mode === 'squad' ? (squad.room?.bingo ? 'on this square' : 'this round') : 'today'}</T>}
-              </View>
+              </Glass>
             </>
           )}
         </View>
@@ -202,7 +205,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
           }}
         />
       }
-      <LinearGradient colors={['rgba(18,21,15,0.85)', 'rgba(18,21,15,0)']} style={[styles.topShade, { paddingTop: insets.top + 8 }]}>
+      <LinearGradient colors={['rgba(14,19,40,0.85)', 'rgba(14,19,40,0)']} style={[styles.topShade, { paddingTop: insets.top + 8 }]}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingHorizontal: 20 }}>
           <IconButton icon="x" label="Close" onPress={close} tone="light" />
           <View style={{ flex: 1, gap: 6 }}>
@@ -232,7 +235,7 @@ export default function Shoot({ promptId, promptText, examples, mode }: { prompt
       {denied && (
         <View style={styles.center}>
           <Feather name="camera-off" size={40} color={C.paper} />
-          <T style={{ color: C.paper, textAlign: 'center', fontFamily: F.bodyBold }}>{Platform.OS === 'web' ? 'Allow the camera for this site in your browser, then reload.' : 'Rarefind needs the camera to see your finds.'}</T>
+          <T style={{ color: C.paper, textAlign: 'center', fontFamily: F.bodyBold }}>{Platform.OS === 'web' ? 'Allow the camera for this site in your browser, then reload.' : 'Brillion needs the camera to see your finds.'}</T>
           {denied && (
             <Button
               title={Platform.OS === 'web' ? 'Ask again' : perm?.canAskAgain ? 'Allow camera' : 'Open settings'}
@@ -272,9 +275,9 @@ const styles = StyleSheet.create({
   topShade: { position: 'absolute', top: 0, left: 0, right: 0, paddingBottom: 48 },
   center: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 40 },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center' },
-  shutter: { width: 84, height: 84, borderRadius: 42, borderWidth: 5, borderColor: C.white, alignItems: 'center', justifyContent: 'center' },
-  shutterIn: { width: 64, height: 64, borderRadius: 32, backgroundColor: C.white },
-  rejected: { borderRadius: 18, borderWidth: 2, borderColor: C.ink, overflow: 'hidden', transform: [{ rotate: '-3deg' }] },
+  shutter: { width: 84, height: 84, borderRadius: 42, borderWidth: 3, borderColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
+  shutterIn: { width: 66, height: 66, borderRadius: 33, backgroundColor: '#FFF2C6' },
+  rejected: { borderRadius: 18, borderWidth: 4, borderColor: C.white, overflow: 'hidden', transform: [{ rotate: '-3deg' }], boxShadow: '0px 14px 30px rgba(40,25,15,0.3)' },
   setDone: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, height: 46, borderRadius: 999, backgroundColor: C.blaze },
   devChip:{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.18)' },
 });

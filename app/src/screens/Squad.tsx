@@ -52,7 +52,7 @@ function Connecting() {
   const nav = useNav();
   const squad = useSquad();
   return (
-    <Screen>
+    <Screen zone="foothill">
       <Bar onBack={nav.back} />
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
         <Mono>Joining squad {squad.session?.code}</Mono>
@@ -81,7 +81,7 @@ function Start() {
     fn();
   };
   return (
-    <Screen>
+    <Screen zone="foothill">
       <Bar onBack={nav.back} title="Squad" />
       <ScrollView contentContainerStyle={{ gap: 28, paddingTop: 12 }} keyboardShouldPersistTaps="handled">
         <View style={{ gap: 8 }}>
@@ -135,7 +135,7 @@ function Lobby({ room }: { room: RoomView }) {
   // the mode's how-to opens the first time this phone meets it (also when the host switches modes)
   const howto = useHowTo(modeOf(room));
   return (
-    <Screen>
+    <Screen zone="foothill">
       <HowToSheet k={howto.open} onClose={howto.close} />
       <Bar onBack={nav.back} title="Squad" />
       <View style={{ alignItems: 'center', gap: 10, marginTop: 8 }}>
@@ -147,7 +147,7 @@ function Lobby({ room }: { room: RoomView }) {
             </View>
           ))}
         </View>
-        <Button title={copied ? 'Link copied' : 'Invite friends'} icon="share-2" kind="line" onPress={async () => (await shareText(`Join my Rarefind squad: ${inviteLink(room.code)} (code ${room.code})`)) === 'copied' && setCopied(true)} style={{ height: 48, marginTop: 10 }} />
+        <Button title={copied ? 'Link copied' : 'Invite friends'} icon="share-2" kind="line" onPress={async () => (await shareText(`Join my Brillion squad: ${inviteLink(room.code)} (code ${room.code})`)) === 'copied' && setCopied(true)} style={{ height: 48, marginTop: 10 }} />
       </View>
       <ScrollView style={{ flex: 1, marginTop: 24 }} contentContainerStyle={{ gap: 10 }}>
         <Label>{room.players.length} in the squad</Label>
@@ -262,7 +262,7 @@ function Hunt({ room }: { room: RoomView }) {
 
   if (room.phase === 'countdown') {
     return (
-      <Screen>
+      <Screen zone="cloudline">
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
           <Label>{room.bingo ? `Bingo · 9 squares · ${clock(span)}` : `Round ${room.round} of ${room.totalRounds}`}</Label>
           <H size={140} style={{ fontVariant: ['tabular-nums'] }}>
@@ -273,7 +273,7 @@ function Hunt({ room }: { room: RoomView }) {
     );
   }
   return (
-    <Screen>
+    <Screen zone="cloudline">
       <Label style={{ textAlign: 'center' }}>
         Round {room.round} of {room.totalRounds}
       </Label>
@@ -353,7 +353,7 @@ function RoundReveal({ room }: { room: RoomView }) {
   const cw = cards.length === 1 ? Math.min(width - 80, 300) : Math.min(width * 0.62, 260);
   const last = room.round >= room.totalRounds;
   return (
-    <Screen pad={false}>
+    <Screen pad={false} zone="cloudline">
       <View style={{ paddingHorizontal: 20, paddingTop: 8, gap: 6 }}>
         <Label>Round {room.round} reveal</Label>
         <H size={32}>{cap(room.prompt?.text)}</H>
@@ -417,7 +417,7 @@ function Results({ room }: { room: RoomView }) {
   const bb = room.bingo ? room.bingoBoard : null;
   const [viewing, setViewing] = useState(me); // bingo: whose card is shown
   return (
-    <Screen>
+    <Screen zone="ridge">
       <Bar onBack={nav.back} title="Squad results" />
       <ScrollView contentContainerStyle={{ gap: 24, paddingBottom: 16 }} showsVerticalScrollIndicator={false}>
         <View style={{ alignItems: 'center', gap: 2 }}>
@@ -501,16 +501,16 @@ function Results({ room }: { room: RoomView }) {
 }
 
 const styles = StyleSheet.create({
-  input: { height: 58, borderRadius: 16, borderWidth: 2, borderColor: C.ink, backgroundColor: C.card, paddingHorizontal: 18, fontFamily: F.bodyMid, fontSize: 18, color: C.ink },
+  input: { height: 58, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.card, paddingHorizontal: 18, fontFamily: F.bodyMid, fontSize: 18, color: C.ink },
   rule: { flex: 1, height: 2, backgroundColor: C.line },
-  tile: { width: 62, height: 80, borderRadius: 12, borderWidth: 2, borderColor: C.ink, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center', boxShadow: `0px 4px 0px ${C.ink}` },
+  tile: { width: 62, height: 80, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.card, alignItems: 'center', justifyContent: 'center', boxShadow: '0px 10px 24px rgba(20,30,70,0.18)' },
   player: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, borderWidth: 2, borderColor: C.line },
-  mode: { flex: 1, height: 38, borderRadius: 999, borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  track: { height: 12, borderRadius: 999, backgroundColor: C.paperDeep, marginTop: 6, overflow: 'hidden', borderWidth: 2, borderColor: C.ink },
-  pchip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 12, borderRadius: 999, borderWidth: 2, borderColor: C.ink },
-  locked: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, height: 58, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed', borderColor: C.ink },
+  mode: { flex: 1, height: 38, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  track: { height: 12, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.55)', marginTop: 6, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
+  pchip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass },
+  locked: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, height: 58, borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.faint, backgroundColor: 'rgba(255,255,255,0.6)' },
   offline: { position: 'absolute', top: 54, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, height: 34, borderRadius: 999, backgroundColor: C.ink },
   promptCard: { backgroundColor: C.ink, borderRadius: 26, padding: 24, paddingTop: 22, gap: 14, transform: [{ rotate: '-1.5deg' }], boxShadow: '6px 8px 0px rgba(18,21,15,0.18)' },
-  rank: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 2, borderColor: C.ink },
+  rank: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass },
 });

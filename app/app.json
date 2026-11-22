@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Rarefind",
+    "name": "Brillion",
     "slug": "rarefind",
     "owner": "benjamingurevitch",
     "scheme": "rarefind",
@@ -8,7 +8,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "backgroundColor": "#E9EDE5",
+    "backgroundColor": "#1A2140",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.benjamingurevitch.rarefind",
@@ -16,14 +16,14 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
-        "NSCameraUsageDescription": "Rarefind uses the camera so you can photograph your finds.",
+        "NSCameraUsageDescription": "Brillion uses the camera so you can photograph your finds.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.benjamingurevitch.rarefind",
       "adaptiveIcon": {
-        "backgroundColor": "#12150F",
+        "backgroundColor": "#1A2140",
         "foregroundImage": "./assets/adaptive-icon.png"
       },
       "permissions": [
@@ -35,9 +35,9 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "name": "Rarefind",
-      "backgroundColor": "#E9EDE5",
-      "themeColor": "#E9EDE5"
+      "name": "Brillion",
+      "backgroundColor": "#1A2140",
+      "themeColor": "#1A2140"
     },
     "plugins": [
       "expo-font",
@@ -46,7 +46,7 @@
         {
           "image": "./assets/splash-icon.png",
           "imageWidth": 180,
-          "backgroundColor": "#E9EDE5"
+          "backgroundColor": "#1A2140"
         }
       ],
       "expo-status-bar",
@@ -54,7 +54,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Rarefind uses the camera so you can photograph your finds.",
+          "cameraPermission": "Brillion uses the camera so you can photograph your finds.",
           "recordAudioAndroid": false
         }
       ],
@@ -62,7 +62,7 @@
       [
         "expo-notifications",
         {
-          "color": "#F2542D"
+          "color": "#B8892A"
         }
       ]
     ],

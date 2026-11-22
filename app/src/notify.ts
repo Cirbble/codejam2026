@@ -40,7 +40,7 @@ export async function remindRound(key: string, endsAtLocal: number, prompt: stri
   scheduledFor = k;
   await Notifications.cancelAllScheduledNotificationsAsync().catch(() => {});
   if (!found) ids.warn = await at(endsAtLocal - 30_000, '30 seconds left', prompt);
-  ids.next = await at(endsAtLocal + revealMs, round < total ? `Round ${round + 1} is starting` : 'Squad results are in', 'Open Rarefind');
+  ids.next = await at(endsAtLocal + revealMs, round < total ? `Round ${round + 1} is starting` : 'Squad results are in', 'Open Brillion');
 }
 
 export async function clearReminders() {

@@ -6,7 +6,7 @@ import { shareText } from '../share';
 import { EmptySlot, GameCard } from '../components/GameCard';
 import { Bar, Button, H, Mono, Screen, T, tap } from '../components/ui';
 import { useNav } from '../nav';
-import { C, F, Tier, TIER_ORDER, TIERS } from '../theme';
+import { C, F, Tier, TIER_ORDER, TIERS, altitude, isNight } from '../theme';
 
 export function Collection() {
   const nav = useNav();
@@ -45,7 +45,7 @@ export function Collection() {
   const cw = (Math.min(width, 520) - 40 - 14) / 2;
 
   return (
-    <Screen>
+    <Screen zone="ridge">
       <Bar onBack={nav.back} title="Cards" right={<Mono style={{ width: 44, textAlign: 'right', color: C.ink, fontSize: 15 }}>{cards?.length ?? ''}</Mono>} />
       {sets && (
         <View style={styles.tabs}>
@@ -184,23 +184,25 @@ export function CardView({ card }: { card: Card }) {
   const cw = Math.min(width - 56, 340);
   const t = TIERS[card.tier];
   const when = new Date(card.at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+  // a card is shown on the sky of the altitude it reached
+  const night = isNight(t.zone);
   return (
-    <Screen>
-      <Bar onBack={nav.back} />
+    <Screen zone={t.zone}>
+      <Bar onBack={nav.back} light={night} />
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 22 }}>
         <GameCard card={card} width={cw} />
         <View style={{ alignItems: 'center', gap: 8, paddingHorizontal: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
-            <H size={30} style={{ color: t.text }}>
+            <H size={32} style={[{ color: night ? t.glow : t.text }, night && { textShadowColor: 'rgba(255,214,120,0.55)', textShadowRadius: 16 }]}>
               {t.name}
             </H>
-            <H size={30}>+{card.points}</H>
+            <H size={32} style={{ color: night ? C.white : C.ink }}>+{card.points}</H>
           </View>
-          <T style={{ fontFamily: F.bodyBold, fontSize: 17 }}>
+          <T style={{ fontFamily: F.bodyBold, fontSize: 17, textAlign: 'center', color: night ? '#E6E1FA' : C.ink }}>
             {rarityLine(card)}
           </T>
-          <Mono>
-            {when} · {card.mode === 'daily' ? 'Daily' : 'Squad'}
+          <Mono style={{ color: night ? '#C9C3EC' : C.inkSoft }}>
+            {when} · {card.mode === 'daily' ? 'Daily' : 'Squad'} · +{altitude(card.points)}
           </Mono>
         </View>
       </View>
@@ -209,7 +211,7 @@ export function CardView({ card }: { card: Card }) {
         icon="share"
         kind="line"
         onPress={async () => {
-          const r = await shareText(`${card.title}: a ${t.name} find for "${card.promptText}" on Rarefind. ${card.sameCount} of ${card.totalCount} finds. ${SITE}`);
+          const r = await shareText(`${card.title}: a ${t.name} find for "${card.promptText}" on Brillion. ${card.sameCount} of ${card.totalCount} finds. ${SITE}`);
           if (r === 'copied') setCopied(true);
         }}
       />
@@ -219,9 +221,9 @@ export function CardView({ card }: { card: Card }) {
 
 const styles = StyleSheet.create({
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  tabs: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 999, borderWidth: 2, borderColor: C.ink, marginBottom: 14 },
+  tabs: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass, marginBottom: 14 },
   tab: { flex: 1, height: 38, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  set: { gap: 12, padding: 14, borderRadius: 18, borderWidth: 2, borderColor: C.line },
+  set: { gap: 12, padding: 14, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass, boxShadow: '0px 10px 26px rgba(20,30,70,0.14)' },
   doneBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 30, paddingHorizontal: 10, borderRadius: 999, backgroundColor: C.blaze },
   filter: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 12, borderRadius: 999, borderWidth: 2 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },

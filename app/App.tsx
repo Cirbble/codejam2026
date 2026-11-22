@@ -1,4 +1,5 @@
-import { BricolageGrotesque_600SemiBold, BricolageGrotesque_800ExtraBold } from '@expo-google-fonts/bricolage-grotesque';
+import { Cinzel_600SemiBold } from '@expo-google-fonts/cinzel';
+import { CormorantGaramond_600SemiBold, CormorantGaramond_700Bold } from '@expo-google-fonts/cormorant-garamond';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono';
 import { Feather } from '@expo/vector-icons';
@@ -53,8 +54,9 @@ function Router() {
 
 export default function App() {
   const [ok, err] = useFonts({
-    BricolageGrotesque_600SemiBold,
-    BricolageGrotesque_800ExtraBold,
+    Cinzel_600SemiBold,
+    CormorantGaramond_600SemiBold,
+    CormorantGaramond_700Bold,
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
@@ -65,11 +67,11 @@ export default function App() {
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});
   }, [ready]);
-  if (!ready) return <View style={{ flex: 1, backgroundColor: C.paper }} />;
+  if (!ready) return <View style={{ flex: 1, backgroundColor: C.ink }} />;
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
-      <View style={{ flex: 1, backgroundColor: C.paper }}>
+      <View style={{ flex: 1, backgroundColor: C.ink }}>
         <SquadProvider>
           <NavProvider>
             <Router />

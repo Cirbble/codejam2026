@@ -2,7 +2,7 @@ import * as Haptics from 'expo-haptics';
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Platform, StyleSheet, Text, View } from 'react-native';
 import type { Card } from '../api';
-import { C, F, TIERS } from '../theme';
+import { altitude, C, F, TIERS } from '../theme';
 import { CardBack, GameCard, CARD_RATIO } from './GameCard';
 
 const native = Platform.OS !== 'web';
@@ -45,7 +45,7 @@ export function Pending({ width }: { width: number }) {
 
 /** Flips a face-down card over, then stamps its tier. */
 /** Flips a face-down card over, then lands its tier and points underneath. */
-export function FlipReveal({ card, width }: { card: Card; width: number }) {
+export function FlipReveal({ card, width, onDark }: { card: Card; width: number; onDark?: boolean }) {
   const f = useRef(new Animated.Value(0)).current;
   const stamp = useRef(new Animated.Value(0)).current;
   const fade = useRef(new Animated.Value(1)).current;
@@ -65,17 +65,18 @@ export function FlipReveal({ card, width }: { card: Card; width: number }) {
   const st = stamp.interpolate({ inputRange: [0, 1], outputRange: [1.6, 1] });
   const t = TIERS[card.tier];
   return (
-    <View style={{ width, height: width * CARD_RATIO + 70, alignItems: 'center' }}>
+    <View style={{ width, height: width * CARD_RATIO + 92, alignItems: 'center' }}>
       <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', transform: [{ translateY: lift }, { scaleX: backX }] }]}>
         <CardBack width={width} />
       </Animated.View>
       <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', transform: [{ translateY: lift }, { scaleX: frontX }] }]}>
         <GameCard card={card} width={width} />
       </Animated.View>
-      <Animated.View style={{ position: 'absolute', top: width * CARD_RATIO + 22, alignSelf: 'center', alignItems: 'center', opacity: stamp, transform: [{ scale: st }] }}>
-        <Text style={{ fontFamily: F.display, fontSize: 32, color: t.text, letterSpacing: -0.5 }}>
+      <Animated.View style={{ position: 'absolute', top: width * CARD_RATIO + 18, alignSelf: 'center', alignItems: 'center', opacity: stamp, transform: [{ scale: st }] }}>
+        <Text style={[{ fontFamily: F.display, fontSize: 34, color: onDark ? t.glow : t.text, textAlign: 'center' }, onDark && { textShadowColor: 'rgba(255,214,120,0.6)', textShadowRadius: 18 }]}>
           {t.name} · +{card.points}
         </Text>
+        <Text style={{ fontFamily: F.mono, fontSize: 13, color: onDark ? '#E6E1FA' : C.inkSoft, textAlign: 'center', marginTop: 4 }}>+{altitude(card.points)}</Text>
       </Animated.View>
     </View>
   );

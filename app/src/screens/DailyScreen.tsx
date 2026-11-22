@@ -3,9 +3,9 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { cap, MAX_TRIES } from '../api';
 import { EmptySlot, GameCard } from '../components/GameCard';
-import { Bar, H, Mono, Screen, T, tap } from '../components/ui';
+import { Bar, Glass, H, Mono, Screen, T, tap } from '../components/ui';
 import { useNav } from '../nav';
-import { C, F, TIERS } from '../theme';
+import { altitude, C, F, isNight, TIERS, zoneForPoints } from '../theme';
 import { useDaily } from './Home';
 
 function untilText(ms: number) {
@@ -23,9 +23,11 @@ export default function DailyScreen() {
     return () => clearInterval(id);
   }, []);
 
+  const zone = zoneForPoints(daily?.score ?? 0);
+  const night = isNight(zone);
   return (
-    <Screen>
-      <Bar onBack={nav.back} title="Today" right={<Mono style={{ width: 64, textAlign: 'right', color: C.ink, fontSize: 15 }}>{daily?.score ?? 0} pts</Mono>} />
+    <Screen zone={zone}>
+      <Bar onBack={nav.back} title="Today's climb" light={night} right={<Mono style={{ width: 76, textAlign: 'right', color: night ? C.goldPale : C.ink, fontSize: 14 }}>{altitude(daily?.score ?? 0)}</Mono>} />
       {!daily ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           {failed ? (
@@ -69,11 +71,13 @@ export default function DailyScreen() {
                     <T style={{ color: C.blaze, fontFamily: F.bodyBold, fontSize: 15 }}>{left} {left === 1 ? 'try' : 'tries'} left</T>
                   ) : null}
                 </View>
-                {card && <Text style={{ fontFamily: F.display, fontSize: 24, color: C.ink, minWidth: 40, textAlign: 'right', fontVariant: ['tabular-nums'] }}>{card.points}</Text>}
+                {card && <Mono style={{ color: TIERS[card.tier].text, minWidth: 40, textAlign: 'right' }}>+{altitude(card.points)}</Mono>}
               </Pressable>
             );
           })}
-          <Mono style={{ textAlign: 'center', marginTop: 8, color: C.faint }}>New hunt in {untilText(Math.max(0, daily.resetsAt - now))}</Mono>
+          <Glass style={{ alignSelf: 'center', marginTop: 8, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 999 }}>
+            <Mono style={{ textAlign: 'center', color: C.inkSoft }}>New climb in {untilText(Math.max(0, daily.resetsAt - now))}</Mono>
+          </Glass>
         </ScrollView>
       )}
     </Screen>
@@ -87,9 +91,10 @@ const styles = StyleSheet.create({
     gap: 16,
     padding: 12,
     paddingRight: 16,
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: C.ink,
-    backgroundColor: C.paper,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: C.glass,
+    boxShadow: '0px 10px 26px rgba(20,30,70,0.14)',
   },
 });

@@ -17,7 +17,7 @@ export const HOWTO: Record<HowToKey, { title: string; steps: Step[] }> = {
     steps: [
       { icon: 'map-pin', text: 'Everyone gets the same prompt. Go out and find one in real life.' },
       { icon: 'camera', text: 'Photograph it. The AI checks it fits and names what you found.' },
-      { icon: 'award', text: 'Rarer finds score more. After each round every card is revealed. 5 rounds.' },
+      { icon: 'award', text: 'Rarer finds climb higher. After each round every card is revealed. 5 rounds.' },
     ],
   },
   bingo: {
@@ -48,7 +48,7 @@ export const HOWTO: Record<HowToKey, { title: string; steps: Step[] }> = {
     title: 'Quick play',
     steps: [
       { icon: 'clock', text: 'Three prompts, 60 seconds each. Find something near you and photograph it.' },
-      { icon: 'award', text: 'The AI judges it. Rarer finds score more: 10 points for common, up to 100.' },
+      { icon: 'award', text: 'The AI judges it. Rarer finds climb higher: 10 points at the foothill, up to 100 for one in a Brillion.' },
       { icon: 'flag', text: 'Race the ghost of today’s top team. Your team’s best counted run goes on the board.' },
     ],
   },
@@ -118,7 +118,7 @@ export function HowToLink({ onPress }: { onPress: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(18,21,15,0.55)', justifyContent: 'flex-end', alignItems: 'center' },
-  sheet: { width: '100%', maxWidth: 520, backgroundColor: C.paper, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 34, gap: 8, borderWidth: 2, borderColor: C.ink },
-  dot: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center' },
+  backdrop: { flex: 1, backgroundColor: C.scrim, justifyContent: 'flex-end', alignItems: 'center' },
+  sheet: { width: '100%', maxWidth: 520, backgroundColor: C.paper, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 34, gap: 8, borderWidth: 1, borderColor: 'rgba(232,200,114,0.8)' },
+  dot: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.ink, borderWidth: 1, borderColor: C.goldLight, alignItems: 'center', justifyContent: 'center' },
 });

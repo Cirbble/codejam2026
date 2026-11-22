@@ -45,7 +45,7 @@ export function BingoHunt({ room }: { room: RoomView }) {
   const open = (p: Prompt) => nav.push({ name: 'shoot', promptId: p.id, promptText: p.text, examples: p.examples, mode: 'squad' });
 
   return (
-    <Screen>
+    <Screen zone="ridge">
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <View style={{ gap: 2 }}>
           <Label>Bingo</Label>
@@ -152,7 +152,7 @@ export function BingoReveal({ room }: { room: RoomView }) {
   const bb = room.bingoBoard;
   const ranking = [...room.players].sort((a, b) => b.score - a.score);
   return (
-    <Screen>
+    <Screen zone="ridge">
       <View style={{ gap: 4 }}>
         <Label>Time's up</Label>
         <H size={32}>Your bingo card</H>
@@ -184,10 +184,10 @@ export function BingoReveal({ room }: { room: RoomView }) {
 }
 
 const styles = StyleSheet.create({
-  track: { height: 12, borderRadius: 999, backgroundColor: C.paperDeep, marginTop: 8, overflow: 'hidden', borderWidth: 2, borderColor: C.ink },
-  tile: { borderRadius: 16, borderWidth: 2, borderColor: C.ink, backgroundColor: C.card, padding: 10, justifyContent: 'space-between' },
+  track: { height: 12, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.55)', marginTop: 8, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
+  tile: { borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.card, padding: 10, justifyContent: 'space-between' },
   banner: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, backgroundColor: C.ink },
-  pchip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 12, borderRadius: 999, borderWidth: 2, borderColor: C.ink },
+  pchip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass },
   lineRing: { borderRadius: 18, borderWidth: 3, borderColor: C.blaze, alignItems: 'center', justifyContent: 'center' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 14, borderWidth: 2, borderColor: C.ink },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass },
 });

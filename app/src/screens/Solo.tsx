@@ -40,7 +40,7 @@ export function SoloStart() {
   const n = name.trim().slice(0, 16) || t;
   const howto = useHowTo('quick');
   return (
-    <Screen>
+    <Screen zone="cloudline">
       <HowToSheet k={howto.open} onClose={howto.close} />
       <Bar onBack={nav.back} title="Quick play" right={<Button title="Team board" icon="award" kind="line" onPress={() => nav.push({ name: 'board' })} style={{ height: 44, paddingHorizontal: 12, borderRadius: 13 }} />} />
       <ScrollView contentContainerStyle={{ gap: 22, paddingTop: 8 }} keyboardShouldPersistTaps="handled">
@@ -152,7 +152,7 @@ export function SoloResults({ room }: { room: RoomView }) {
     setTimeout(() => squad.solo(name, team), 300);
   };
   return (
-    <Screen>
+    <Screen zone="ridge">
       <Bar onBack={() => { squad.leave(); nav.reset(); }} title={room.team ?? 'Quick play'} />
       <ScrollView contentContainerStyle={{ gap: 22, paddingBottom: 12 }} showsVerticalScrollIndicator={false}>
         <View style={{ alignItems: 'center', gap: 4 }}>
@@ -229,7 +229,7 @@ export function Board() {
     return () => clearInterval(id);
   }, [load]);
   return (
-    <Screen>
+    <Screen zone="ridge">
       <Bar onBack={nav.back} title="Team board" />
       {!rows ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -269,11 +269,11 @@ export function Board() {
 
 const styles = StyleSheet.create({
   rules: { backgroundColor: C.ink, borderRadius: 24, padding: 22, gap: 10, transform: [{ rotate: '-1deg' }] },
-  input: { height: 58, borderRadius: 16, borderWidth: 2, borderColor: C.ink, backgroundColor: C.card, paddingHorizontal: 18, fontFamily: F.bodyMid, fontSize: 18, color: C.ink },
+  input: { height: 58, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.card, paddingHorizontal: 18, fontFamily: F.bodyMid, fontSize: 18, color: C.ink },
   miss: { borderRadius: 12, borderWidth: 2, borderStyle: 'dashed', borderColor: C.faint, alignItems: 'center', justifyContent: 'center', backgroundColor: C.paperDeep },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 2, borderColor: C.ink },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass },
   ghost: { gap: 8, padding: 12, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed', borderColor: C.line, marginTop: 12 },
   ghostTrack: { height: 10, borderRadius: 999, backgroundColor: C.paperDeep, justifyContent: 'center' },
   ghostMark: { position: 'absolute', width: 14, height: 14, marginLeft: -7, borderRadius: 7, borderWidth: 2, borderColor: C.paper },
-  ghostResult: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, paddingHorizontal: 14, height: 40, borderRadius: 999, borderWidth: 2, borderColor: C.ink },
+  ghostResult: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, paddingHorizontal: 14, height: 40, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: C.glass },
 });
